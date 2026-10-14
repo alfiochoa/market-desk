@@ -12,6 +12,7 @@ import { dedupe, parseRss, type NewsItem } from '../src/lib/rss.ts';
 import { parseYieldXml } from '../src/lib/treasury.ts';
 import { simulateBars } from '../src/lib/simulate.ts';
 import { parseStooqCsv } from '../src/lib/stooq.ts';
+import { parseTwelveData } from '../src/lib/twelvedata.ts';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
 const UA = 'market-desk/0.1 (educational demo; +https://github.com/alfiochoa/market-desk)';
@@ -48,6 +49,21 @@ await step('equities', 'equities.json', async () => {
   // so we do NOT solve it. If it appears we keep the last snapshot, or write an explicitly SIMULATED placeholder on first run.
   const probe = parseStooqCsv(await get('https://stooq.com/q/d/l/?s=aapl.us&i=d', 'text/csv', 1).catch(() => ''));
   if (!probe) {
+    // Optional keyed fallback: a free Twelve Data key in the TWELVE_DATA_API_KEY secret (never logged). Free tier = 8 credits/minute,
+    // so we fetch 8 symbols per minute and only when the committed snapshot is older than 20 h.
+    const key = process.env.TWELVE_DATA_API_KEY;
+    const stale = !has('equities.json') || Date.now() - Date.parse(JSON.parse(readFileSync(join(OUT, 'equities.json'), 'utf8')).generatedAt) > 20 * 3600e3;
+    if (key && stale) {
+      const syms = EQUITIES.map((e) => e.symbol), bars: Record<string, ReturnType<typeof parseTwelveData>[string]> = {};
+      for (let i = 0; i < syms.length; i += 8) {
+        if (i) await new Promise((r) => setTimeout(r, 62000));
+        const chunk = syms.slice(i, i + 8);
+        Object.assign(bars, parseTwelveData(JSON.parse(await get(`https://api.twelvedata.com/time_series?symbol=${chunk.join(',')}&interval=1day&outputsize=260&apikey=${encodeURIComponent(key)}`)), chunk));
+      }
+      save('equities.json', { generatedAt: now, kind: 'twelvedata', source: 'Twelve Data daily (end-of-day, delayed)', symbols: EQUITIES.map((e) => ({ ...e, bars: bars[e.symbol] })) });
+      return `${syms.length} symbols from Twelve Data (Stooq unavailable)`;
+    }
+    if (key && !stale) return 'Stooq unavailable; snapshot is fresh (<20 h), keeping it';
     if (has('equities.json')) throw new Error('Stooq did not return CSV (403 or browser-verification page; not bypassed)');
     const end = new Date().toISOString().slice(0, 10);
     save('equities.json', {

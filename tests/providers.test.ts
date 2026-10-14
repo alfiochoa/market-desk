@@ -46,3 +46,16 @@ describe('Stooq CSV parser', () => {
     expect(parseStooqCsv('Date,Open,High,Low,Close,Volume\n')).toBeNull();
   });
 });
+
+import { parseTwelveData } from '../src/lib/twelvedata.ts';
+describe('Twelve Data parser (optional keyed fallback)', () => {
+  const v = (d: string, c: string) => ({ datetime: d, open: '1', high: '3', low: '0.5', close: c, volume: '10' });
+  it('handles batch and single-symbol shapes, reverses to oldest-first', () => {
+    const b = parseTwelveData({ AAPL: { status: 'ok', values: [v('2026-10-13', '2'), v('2026-10-12', '1.5')] }, MSFT: { status: 'ok', values: [v('2026-10-13', '9')] } }, ['AAPL', 'MSFT']);
+    expect(b.AAPL.map((x) => x.t)).toEqual(['2026-10-12', '2026-10-13']); expect(b.MSFT[0].c).toBe(9);
+    expect(parseTwelveData({ values: [v('2026-10-13', '2')] }, ['AAPL']).AAPL[0].c).toBe(2);
+  });
+  it('throws on per-symbol errors', () => {
+    expect(() => parseTwelveData({ AAPL: { status: 'error', message: 'limit' } }, ['AAPL'])).toThrow(/limit/);
+  });
+});

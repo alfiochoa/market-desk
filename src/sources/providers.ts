@@ -6,7 +6,7 @@ import type { Bar } from '../lib/simulate.ts';
 
 export interface Coin { id: string; symbol: string; name: string; price: number; cap: number | null; ch24: number | null; ch7d: number | null; spark: number[] }
 export interface Candle { t: number; o: number; h: number; l: number; c: number; v?: number }
-export interface EquitySnap { generatedAt: string; kind: 'stooq' | 'simulated'; source: string; symbols: { symbol: string; name: string; sector: string; w: number; bars: Bar[] }[] }
+export interface EquitySnap { generatedAt: string; kind: 'stooq' | 'twelvedata' | 'simulated'; source: string; symbols: { symbol: string; name: string; sector: string; w: number; bars: Bar[] }[] }
 export interface FxData { base: string; days: string[]; series: Record<string, number[]> }
 export interface FredSnap { generatedAt: string; series: Record<string, { label: string; obs: { date: string; value: number }[] }> }
 export interface TreasurySnap { generatedAt: string; curves: CurvePoint[] }
@@ -16,7 +16,7 @@ const BASE = (import.meta as unknown as { env: { BASE_URL: string } }).env?.BASE
 const json = async (r: Response) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); };
 export const dataUrl = (f: string) => `${BASE}data/${f}`;
 
-function snapshot<T, S>(file: string, label: string, map: (s: S) => { data: T; asOf: string | null }): Provider<T> {
+function snapshot<T, S>(file: string, label: string, map: (s: S) => { data: T; asOf: string | null; source?: string }): Provider<T> {
   return { id: `snap:${file}`, label, kind: 'snapshot', fetch: async ({ fetch, signal }) => map(await json(await fetch(dataUrl(file), { signal })) as S) };
 }
 
@@ -41,7 +41,7 @@ export const cryptoBoard: Provider<Coin[]>[] = [
     },
   },
   {
-    id: 'binance', label: 'Binance public market data', kind: 'live',
+    id: 'binance', label: 'Binance', kind: 'live',
     fetch: async ({ fetch, signal }) => {
       const syms = encodeURIComponent(JSON.stringify(CRYPTO.map((c) => c.pair)));
       const tick = await json(await fetch(`${BN}/ticker/24hr?symbols=${syms}`, { signal })) as { symbol: string; lastPrice: string; priceChangePercent: string }[];
@@ -54,7 +54,7 @@ export const cryptoBoard: Provider<Coin[]>[] = [
       return { data, asOf: new Date().toISOString() };
     },
   },
-  snapshot<Coin[], { generatedAt: string; coins: Coin[] }>('crypto.json', 'Snapshot (CoinGecko, built by Action)', (s) => ({ data: s.coins, asOf: s.generatedAt })),
+  snapshot<Coin[], { generatedAt: string; coins: Coin[] }>('crypto.json', 'CoinGecko (Action snapshot)', (s) => ({ data: s.coins, asOf: s.generatedAt })),
 ];
 
 export const CRYPTO_TF = { '15m': { iv: '15m', cg: 1 }, '1h': { iv: '1h', cg: 7 }, '4h': { iv: '4h', cg: 30 }, '1d': { iv: '1d', cg: 365 }, '1w': { iv: '1w', cg: 365 } } as const;
@@ -64,7 +64,7 @@ export function cryptoCandles(id: string, tf: CryptoTf): Provider<Candle[]>[] {
   const c = CRYPTO.find((x) => x.id === id)!;
   return [
     {
-      id: 'binance-klines', label: 'Binance public market data', kind: 'live',
+      id: 'binance-klines', label: 'Binance', kind: 'live',
       fetch: async ({ fetch, signal }) => {
         const k = await json(await fetch(`${BN}/klines?symbol=${c.pair}&interval=${CRYPTO_TF[tf].iv}&limit=500`, { signal })) as string[][];
         if (!k.length) throw new Error('empty response');
@@ -79,7 +79,7 @@ export function cryptoCandles(id: string, tf: CryptoTf): Provider<Candle[]>[] {
         return { asOf: new Date(k.at(-1)![0]).toISOString(), data: k.map((x) => ({ t: Math.floor(x[0] / 1000), o: x[1], h: x[2], l: x[3], c: x[4] })) };
       },
     },
-    snapshot<Candle[], { generatedAt: string; coins: Coin[] }>('crypto.json', '7-day sparkline snapshot (line only)', (s) => {
+    snapshot<Candle[], { generatedAt: string; coins: Coin[] }>('crypto.json', 'CoinGecko 7d line (Action snapshot)', (s) => {
       const sp = s.coins.find((x) => x.id === id)?.spark ?? [];
       if (!sp.length) throw new Error('no sparkline in snapshot');
       const end = Math.floor(Date.parse(s.generatedAt) / 1000);
@@ -98,7 +98,7 @@ export const fxBoard: Provider<FxData>[] = [
       return { data: fxFromRates(j.rates), asOf: Object.keys(j.rates).sort().at(-1) ?? null };
     },
   },
-  snapshot<FxData, { generatedAt: string; rates: Record<string, Record<string, number>> }>('fx.json', 'Snapshot (Frankfurter, built by Action)', (s) => ({ data: fxFromRates(s.rates), asOf: Object.keys(s.rates).sort().at(-1) ?? null })),
+  snapshot<FxData, { generatedAt: string; rates: Record<string, Record<string, number>> }>('fx.json', 'Frankfurter (Action snapshot)', (s) => ({ data: fxFromRates(s.rates), asOf: Object.keys(s.rates).sort().at(-1) ?? null })),
 ];
 export function fxFromRates(rates: Record<string, Record<string, number>>): FxData {
   const days = Object.keys(rates).sort();
@@ -126,13 +126,13 @@ export const treasury: Provider<TreasurySnap>[] = [
       return { data: { generatedAt: new Date().toISOString(), curves }, asOf: curves.at(-1)!.date };
     },
   },
-  snapshot<TreasurySnap, TreasurySnap>('treasury.json', 'Snapshot (US Treasury, built by Action)', (s) => ({ data: s, asOf: s.curves.at(-1)?.date ?? null })),
+  snapshot<TreasurySnap, TreasurySnap>('treasury.json', 'US Treasury (Action snapshot)', (s) => ({ data: s, asOf: s.curves.at(-1)?.date ?? null })),
 ];
 /** FRED's fredgraph.csv sends no CORS headers, so browsers cannot read it: snapshot only. */
-export const fred: Provider<FredSnap>[] = [snapshot<FredSnap, FredSnap>('fred.json', 'Snapshot (FRED, built by Action)', (s) => ({ data: s, asOf: s.generatedAt }))];
+export const fred: Provider<FredSnap>[] = [snapshot<FredSnap, FredSnap>('fred.json', 'FRED (Action snapshot)', (s) => ({ data: s, asOf: s.generatedAt }))];
 
 /* ---------- equities & news (snapshot only) ---------- */
-export const equities: Provider<EquitySnap>[] = [snapshot<EquitySnap, EquitySnap>('equities.json', 'Snapshot (end-of-day, built by Action)', (s) => ({ data: s, asOf: s.symbols[0]?.bars.at(-1)?.t ?? null }))];
-export const news: Provider<NewsSnap>[] = [snapshot<NewsSnap, NewsSnap>('news.json', 'Snapshot (official RSS, built by Action)', (s) => ({ data: s, asOf: s.generatedAt }))];
+export const equities: Provider<EquitySnap>[] = [snapshot<EquitySnap, EquitySnap>('equities.json', 'Equities (Action snapshot)', (s) => ({ data: s, asOf: s.symbols[0]?.bars.at(-1)?.t ?? null, source: s.kind === 'simulated' ? 'SIMULATED placeholder, not market data' : `${s.kind === 'stooq' ? 'Stooq' : 'Twelve Data'} end-of-day (Action snapshot)` }))];
+export const news: Provider<NewsSnap>[] = [snapshot<NewsSnap, NewsSnap>('news.json', 'Fed/ECB/SEC RSS (Action snapshot)', (s) => ({ data: s, asOf: s.generatedAt }))];
 
 export const equityNames = new Map(EQUITIES.map((e) => [e.symbol, e.name]));

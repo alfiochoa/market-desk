@@ -8,7 +8,7 @@ export interface Provider<T> {
   kind: 'live' | 'snapshot';
   /** Per-provider timeout override (ms). */
   timeoutMs?: number;
-  fetch(ctx: { fetch: typeof fetch; signal: AbortSignal }): Promise<{ data: T; asOf: string | null }>;
+  fetch(ctx: { fetch: typeof fetch; signal: AbortSignal }): Promise<{ data: T; asOf: string | null; source?: string }>;
 }
 export interface KV { getItem(k: string): string | null; setItem(k: string, v: string): void }
 interface Entry<T> { savedAt: number; data: T; source: string; asOf: string | null; kind: Provider<T>['kind'] }
@@ -31,7 +31,7 @@ export async function fetchChain<T>(providers: Provider<T>[], o: Options): Promi
     const timer = setTimeout(() => ac.abort(), p.timeoutMs ?? o.timeoutMs ?? 8000);
     try {
       const r = await p.fetch({ fetch: f, signal: ac.signal });
-      return { result: { data: r.data, asOf: r.asOf, source: p.label, kind: p.kind }, errors };
+      return { result: { data: r.data, asOf: r.asOf, source: r.source ?? p.label, kind: p.kind }, errors };
     } catch (e) {
       errors.push(`${p.label}: ${e instanceof Error ? e.message : String(e)}`);
     } finally { clearTimeout(timer); }
