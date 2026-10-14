@@ -5,3 +5,4 @@ test-results
 .env
 *.log
 tmp/
+public/data/intraday.json

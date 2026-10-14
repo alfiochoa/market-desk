@@ -57,3 +57,4 @@ details summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
   .head { flex-wrap: wrap; } .badge { max-width: 100%; flex-basis: 100%; order: 5; margin-left: 0 !important; text-align: left; } .x { order: 4; } .grid { display: flex; flex-direction: column; gap: 6px; height: auto !important; } .panel { position: relative; width: 100%; } .head { cursor: default; } .resize { display: none; } 
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.tag { font: 9px ui-monospace, monospace; margin-left: 5px; padding: 0 4px; border: 1px solid var(--warn); color: var(--warn); border-radius: 8px; vertical-align: top; } .tag.eod { border-color: var(--line); color: var(--muted); }

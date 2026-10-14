@@ -6,7 +6,7 @@ A keyboard-driven, dark, dense **market terminal** that runs 100% static on GitH
 
 ![market-desk overview](docs/screens/overview.png)
 
-> **Demo / educational only. Not investment advice.** Data is delayed, indicative or end-of-day and can be stale or wrong. Every panel carries a badge with its **source, as-of time and state** (`LIVE`, `CACHED`, `SNAPSHOT`, `ERROR`). Equity prices are end-of-day snapshots (Twelve Data), never real-time; if no real baseline exists the snapshot is explicitly labelled **SIMULATED** (see [Limitations](#honest-limitations)). Not affiliated with, endorsed by or sponsored by any data provider.
+> **Demo / educational only. Not investment advice.** Data is delayed, indicative or end-of-day and can be stale or wrong. Every panel carries a badge with its **source, as-of time and state** (`LIVE`, `CACHED`, `SNAPSHOT`, `ERROR`). Equities (Twelve Data, free shared key) are **end-of-day, refreshed daily after the US close**, plus **delayed intraday quotes for 15 priority symbols about every 30–60 min in US market hours** (best-effort GitHub cron, provisional, volume may be partial) — **never real-time**; if no real baseline exists the snapshot is explicitly labelled **SIMULATED** (see [Limitations](#honest-limitations)). Not affiliated with, endorsed by or sponsored by any data provider.
 
 ## Why
 
@@ -82,7 +82,7 @@ Other scripts (`scripts/gallery.mjs` re-takes the screenshots from the deployed 
 
 ## Quality
 
-**36 unit tests (vitest) + 9 Playwright smoke tests**, all green in CI.
+**45 unit tests (vitest) + 11 Playwright smoke tests**, all green in CI.
 
 * **Unit tests (vitest)**: indicators vs reference values, P&L math and CSV round-trip, layout engine (no overlap), fallback chain / SWR cache / timeout / corrupt storage with mocked `fetch`, provider normalisation (CoinGecko → Binance → snapshot), RSS dedupe, Treasury XML, Stooq and Twelve Data parsers.
 * **Playwright smoke (CI)**: loads the *built* site with provider APIs mocked by fixtures; asserts every widget renders with its badge, the palette opens and navigates, `Alt+2` focus, portfolio persistence, drag + persisted layout + reset, a **full provider outage** (all live widgets fall back to snapshots and say so) and a **snapshot failure** (explicit error, not a blank panel).
@@ -90,7 +90,7 @@ Other scripts (`scripts/gallery.mjs` re-takes the screenshots from the deployed 
 
 ## Honest limitations
 
-* **Equities are end-of-day, delayed, not real-time.** Only symbols whose last bar is older than the last US trading day are fetched, once per weekday at 23:xx UTC (or on a manual run). No holiday calendar: on a market holiday the same last bar is re-fetched (a few credits at most). If the credit limit is hit, the previous snapshot is kept and flagged in the badge. Without any key a clearly labelled SIMULATED placeholder is used.
+* **Equities are not real-time.** Mode and data time are on every badge: `end-of-day · refreshes daily after US close · as of <date>` or `intraday, delayed + end-of-day · refreshes ~every 30–60 min in US market hours (best-effort) · as of HH:MM UTC`. Only 15 priority symbols get intraday quotes (tagged `intraday` in the watchlist; the rest are tagged `EOD`); the chart's last candle is drawn in amber and labelled provisional. Intraday runs are skipped outside 13:30–21:00 UTC weekdays and when `is_market_open` is false (a 1-credit probe). GitHub cron is best-effort, so cadence is "about every 30–60 min", not exact. If the credit limit is hit, the previous data is kept and flagged. EOD has no holiday calendar (same last bar re-fetched on a holiday, a few credits).
 * Crypto/FX/yield-curve panels call third-party APIs from your browser; they can be rate-limited or geo-blocked (Binance's main host is blocked in some countries; the public market-data mirror is used). Falling back is automatic and visible.
 * FRED, news and equities only update when the Action runs (hourly, best effort: GitHub may delay scheduled jobs).
 * Heatmap tile size uses *illustrative* weights, not live market caps. The yield curve compares the latest date with ~21 trading days earlier.
@@ -105,12 +105,14 @@ MIT licensed.
 
 ## Twelve Data credit budget (shared key)
 
-The free Twelve Data plan gives **800 credits/day, 8/minute**; one symbol = 1 credit. The author's key is shared with another project (`sp500-tracker`, ≤ 320 credits per weekday), so market-desk is budgeted to **≤ 60 credits/day** and normally uses ~30 (the symbol list, once per weekday):
+The free Twelve Data plan gives **800 credits/day, 8/minute**; one symbol = 1 credit (`/time_series` and `/quote`). The author's key is shared with another project (`sp500-tracker`, ≤ 320 credits per weekday), so market-desk is budgeted to **≤ 250 credits/day in total**:
 
 | Project | Credits/day |
 |---|---|
-| market-desk | ~30 (hard cap `MAX_CREDITS_PER_RUN = 40` per run, 1 refresh per weekday) |
+| market-desk EOD (30 symbols, once per weekday after the close) | 30 |
+| market-desk intraday (15 symbols × ≤ 14 market-hours runs + ≤ 2 one-credit probes) | ≤ 212 |
+| **market-desk worst case** (`worstCaseDailyCredits()`, unit-tested ≤ 250) | **242** |
 | sp500-tracker | ≤ 320 on weekdays |
 | Total | < 800 |
 
-Rules enforced in `scripts/build-snapshots.ts`: real data is fetched **only** by the scheduled 23:xx UTC weekday run or a manual run with `refresh_equities=true`; pushes and the other hourly runs reuse the committed baseline and never call the API; only missing/outdated symbols are fetched; the log prints `twelvedata credits used: N`; HTTP 429 / "run out of API credits" keeps the previous snapshot. **If you fork this, use your own free key** (repo secret `TWELVE_DATA_API_KEY`) — do not reuse someone else's.
+Rules in `scripts/build-snapshots.ts`: EOD data is fetched **only** by the 23:xx UTC weekday run or a manual run with `refresh_equities=true`, only for symbols older than the last trading day (cap `MAX_CREDITS_PER_RUN = 40`); intraday quotes only on scheduled runs or a manual `refresh_intraday=true`, inside 13:30–21:00 UTC weekdays, at least 25 min apart, after a 1-symbol `is_market_open` probe; pushes never call the API. The log prints `twelvedata credits used: N (day total ~M, estimate)`. HTTP 429 / "run out of API credits" keeps the previous data. **If you fork this, use your own free key** (repo secret `TWELVE_DATA_API_KEY`).

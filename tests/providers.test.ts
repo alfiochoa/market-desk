@@ -93,3 +93,39 @@ describe('end-of-day only', () => {
     expect(dropIncompleteBar([b('2026-10-13'), b('2026-10-14')], new Date('2026-10-14T23:25:00Z')).length).toBe(2);
   });
 });
+
+import { EOD_CREDITS_PER_DAY, INTRADAY_SYMBOLS, MARKET_DESK_DAILY_BUDGET, estimateDayTotal, inIntradayWindow, mergeIntraday, parseQuote, worstCaseDailyCredits, type IntradaySnap } from '../src/lib/intraday.ts';
+import { EQUITIES } from '../src/universe.ts';
+describe('intraday quotes', () => {
+  it('stays within the shared-key daily budget (<= 250 incl. EOD)', () => {
+    expect(MARKET_DESK_DAILY_BUDGET).toBe(250);
+    expect(EOD_CREDITS_PER_DAY).toBe(EQUITIES.length);
+    expect(worstCaseDailyCredits()).toBeLessThanOrEqual(MARKET_DESK_DAILY_BUDGET);
+    expect(INTRADAY_SYMBOLS.every((s) => EQUITIES.some((e) => e.symbol === s))).toBe(true);
+    expect(INTRADAY_SYMBOLS).toContain('AAPL');
+    expect(estimateDayTotal(new Date('2026-10-14T19:55:00Z'))).toBeLessThanOrEqual(MARKET_DESK_DAILY_BUDGET);
+  });
+  it('only runs on weekdays in 13:30-21:00 UTC', () => {
+    expect(inIntradayWindow(new Date('2026-10-14T15:30:00Z'))).toBe(true);
+    expect(inIntradayWindow(new Date('2026-10-14T13:00:00Z'))).toBe(false);
+    expect(inIntradayWindow(new Date('2026-10-14T23:23:00Z'))).toBe(false);
+    expect(inIntradayWindow(new Date('2026-10-17T15:30:00Z'))).toBe(false); // Saturday
+  });
+  const entry = { symbol: 'AAPL', datetime: '2026-10-14', timestamp: 1, last_quote_at: 1792007700, open: '344.6', high: '347', low: '341.7', close: '343.4', volume: '1746256', previous_close: '341.27', is_market_open: true };
+  it('parses a /quote body and rejects errors', () => {
+    const q = parseQuote(entry, 'AAPL');
+    expect(q.close).toBe(343.4); expect(q.is_market_open).toBe(true);
+    expect(() => parseQuote({ status: 'error', message: 'bad' }, 'X')).toThrow(/bad/);
+  });
+  const bar = (t: string, c: number) => ({ t, o: c, h: c, l: c, c, v: 1 });
+  const snap = (dt: string): IntradaySnap => ({ generatedAt: '2026-10-14T19:56:00Z', source: 't', quotes: { AAPL: parseQuote({ ...entry, datetime: dt }, 'AAPL') } });
+  it('adds a provisional bar only when the quote session is newer than the last EOD bar', () => {
+    const syms = [{ symbol: 'AAPL', bars: [bar('2026-10-13', 341)] }, { symbol: 'MSFT', bars: [bar('2026-10-13', 500)] }];
+    const m = mergeIntraday(syms, snap('2026-10-14'));
+    expect(m.symbols[0].bars.at(-1)).toMatchObject({ t: '2026-10-14', c: 343.4, p: true });
+    expect(m.symbols[1].bars.length).toBe(1); // no quote -> stays EOD
+    expect(m.intraday).toMatchObject({ label: '19:55 UTC', lagMin: 1, symbols: ['AAPL'] });
+    expect(mergeIntraday([{ symbol: 'AAPL', bars: [bar('2026-10-14', 343)] }], snap('2026-10-14')).intraday).toBeNull(); // EOD already has the day
+    expect(mergeIntraday(syms, null).intraday).toBeNull();
+  });
+});

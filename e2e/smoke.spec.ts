@@ -126,3 +126,29 @@ test('total failure of a snapshot shows an explicit error, not a blank panel', a
   await expect(badge(page, 'news')).toContainText('ERROR');
   await expect(page.locator('[data-widget=news] .err')).toContainText('Data unavailable');
 });
+
+test.describe('equities wording: mode, cadence and data time', () => {
+  test('end-of-day mode when there are no intraday quotes', async ({ page }) => {
+    await mockApis(page, 'ok'); await page.route('**/data/intraday.json', (r) => r.fulfill({ status: 404, body: '' }));
+    await page.goto('/');
+    await expect(badge(page, 'watchlist')).toContainText('end-of-day · refreshes daily after US close');
+    await expect(page.locator('[data-widget=watchlist] .note')).toContainText('Not real-time');
+    await expect(page.locator('[data-widget=watchlist] tbody tr').first().locator('.tag.eod')).toBeVisible();
+    expect(await page.locator('[data-widget=watchlist]').innerText()).not.toMatch(/\blive\b/i);
+  });
+
+  test('intraday quotes: priority symbols are tagged, the badge says delayed + cadence + UTC time, the last candle is marked provisional', async ({ page }) => {
+    await mockApis(page, 'ok');
+    const q = { datetime: '2099-01-02', last_quote_at: 1792007700, open: 300, high: 320, low: 290, close: 310, volume: 1000, previous_close: 300, is_market_open: true };
+    await page.route('**/data/intraday.json', (r) => r.fulfill(json({ generatedAt: '2026-10-14T19:56:00Z', source: 'fixture', quotes: { AAPL: q, MSFT: { ...q, close: 600 } } })));
+    await page.goto('/');
+    await expect(badge(page, 'watchlist')).toContainText('intraday, delayed');
+    await expect(badge(page, 'watchlist')).toContainText('every 30–60 min');
+    await expect(badge(page, 'watchlist')).toContainText('19:55 UTC');
+    await expect(page.locator('[data-widget=watchlist] .tag:not(.eod)')).toHaveCount(2);
+    await expect(page.locator('[data-widget=watchlist] .note')).toContainText('Intraday, delayed: 2 priority symbols as of 19:55 UTC');
+    await expect(page.locator('[data-widget=chart] .chart-title')).toContainText('last candle = intraday, delayed, provisional');
+    await expect(page.locator('[data-widget=quote]')).toContainText('Session (intraday, provisional)');
+    expect(await page.locator('[data-widget=watchlist]').innerText()).not.toMatch(/\blive\b|real-time quotes/i);
+  });
+});

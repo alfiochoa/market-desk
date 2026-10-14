@@ -3,10 +3,11 @@ import type { Provider } from '../core/data.ts';
 import { CRYPTO, EQUITIES, FX_QUOTES } from '../universe.ts';
 import { parseYieldXml, type CurvePoint } from '../lib/treasury.ts';
 import type { Bar } from '../lib/simulate.ts';
+import { mergeIntraday, type IntradaySnap } from '../lib/intraday.ts';
 
 export interface Coin { id: string; symbol: string; name: string; price: number; cap: number | null; ch24: number | null; ch7d: number | null; spark: number[] }
 export interface Candle { t: number; o: number; h: number; l: number; c: number; v?: number }
-export interface EquitySnap { generatedAt: string; kind: 'stooq' | 'twelvedata' | 'simulated'; source: string; refreshNote?: string; symbols: { symbol: string; name: string; sector: string; w: number; bars: Bar[] }[] }
+export interface EquitySnap { generatedAt: string; kind: 'stooq' | 'twelvedata' | 'simulated'; source: string; refreshNote?: string; intraday?: { asOfIso: string; label: string; lagMin: number; symbols: string[] }; symbols: { symbol: string; name: string; sector: string; w: number; bars: Bar[] }[] }
 export interface FxData { base: string; days: string[]; series: Record<string, number[]> }
 export interface FredSnap { generatedAt: string; series: Record<string, { label: string; obs: { date: string; value: number }[] }> }
 export interface TreasurySnap { generatedAt: string; curves: CurvePoint[] }
@@ -132,7 +133,21 @@ export const treasury: Provider<TreasurySnap>[] = [
 export const fred: Provider<FredSnap>[] = [snapshot<FredSnap, FredSnap>('fred.json', 'FRED (Action snapshot)', (s) => ({ data: s, asOf: s.generatedAt }))];
 
 /* ---------- equities & news (snapshot only) ---------- */
-export const equities: Provider<EquitySnap>[] = [snapshot<EquitySnap, EquitySnap>('equities.json', 'Equities (Action snapshot)', (s) => ({ data: s, asOf: s.symbols[0]?.bars.at(-1)?.t ?? null, source: s.kind === 'simulated' ? 'SIMULATED placeholder, not market data' : `${s.kind === 'stooq' ? 'Stooq' : 'Twelve Data'} end-of-day (Action snapshot)${s.refreshNote ? ' — last refresh failed, previous data kept' : ''}` }))];
+const EOD_CADENCE = 'refreshes daily after US close';
+export const INTRADAY_CADENCE = 'refreshes ~every 30–60 min in US market hours (best-effort)';
+/** End-of-day snapshot (committed baseline) + optional intraday quotes for a priority subset (never 'live'; delayed, provisional). */
+export const equities: Provider<EquitySnap>[] = [{
+  id: 'snap:equities', label: 'Equities (Action snapshot)', kind: 'snapshot',
+  fetch: async ({ fetch, signal }) => {
+    const s = await json(await fetch(dataUrl('equities.json'), { signal })) as EquitySnap;
+    const iq = await fetch(dataUrl('intraday.json'), { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as IntradaySnap | null;
+    const m = s.kind === 'twelvedata' ? mergeIntraday(s.symbols, iq && iq.quotes ? iq : null) : { symbols: s.symbols, intraday: null };
+    const eodAsOf = s.symbols[0]?.bars.at(-1)?.t ?? null;
+    const base = s.kind === 'simulated' ? 'SIMULATED placeholder, not market data' : 'Twelve Data';
+    if (m.intraday) { const day = m.symbols.find((x) => x.bars.at(-1)?.p)!.bars.at(-1)!.t; return { data: { ...s, symbols: m.symbols, intraday: m.intraday }, asOf: `${m.intraday.label} (${day})`, source: `${base} · intraday, delayed + end-of-day · ${INTRADAY_CADENCE}` }; }
+    return { data: s, asOf: eodAsOf, source: s.kind === 'simulated' ? base : `${base} · end-of-day · ${EOD_CADENCE}${s.refreshNote ? ' — last refresh failed, previous data kept' : ''}` };
+  },
+}];
 export const news: Provider<NewsSnap>[] = [snapshot<NewsSnap, NewsSnap>('news.json', 'Fed/ECB/SEC RSS (Action snapshot)', (s) => ({ data: s, asOf: s.generatedAt }))];
 
 export const equityNames = new Map(EQUITIES.map((e) => [e.symbol, e.name]));

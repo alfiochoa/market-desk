@@ -1,9 +1,10 @@
 name: Build snapshots & deploy Pages
 on:
   push: { branches: [main] }
-  schedule: [{ cron: '23 * * * *' }]   # hourly; GitHub may delay scheduled runs
+  schedule: [{ cron: '23 * * * *' }, { cron: '53 13-21 * * 1-5' }]   # hourly + a second slot in US market hours (≈ every 30 min; best-effort, GitHub may delay or skip runs)
   workflow_dispatch:
     inputs:
+      refresh_intraday: { description: 'Fetch intraday quotes now (market hours only; probe costs 1 credit, full run 15)', type: boolean, default: false }
       refresh_equities: { description: 'Fetch real end-of-day equities from Twelve Data (uses up to ~35 credits of a shared key)', type: boolean, default: false }
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: false }
@@ -16,18 +17,23 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
-      - name: Decide whether to refresh equities (23:xx UTC weekdays, or manual with refresh_equities=true)
+      - name: Decide what to refresh (EOD: 23:xx UTC weekdays or manual; intraday: scheduled runs or manual, gated again in code)
         id: gate
         run: |
           r=0
           if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%H)" = "23" ] && [ "$(date -u +%u)" -le 5 ]; then r=1; fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.refresh_equities }}" = "true" ]; then r=1; fi
           echo "refresh=$r" >> "$GITHUB_OUTPUT"
+          i=0
+          if [ "${{ github.event_name }}" = "schedule" ]; then i=1; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.refresh_intraday }}" = "true" ]; then i=1; fi
+          echo "intraday=$i" >> "$GITHUB_OUTPUT"
       - name: Build data snapshots (each source independent; failures keep the previous file)
         id: snap
         env:
           TWELVE_DATA_API_KEY: '${{ secrets.TWELVE_DATA_API_KEY }}'
           EQUITIES_REFRESH: '${{ steps.gate.outputs.refresh }}'
+          INTRADAY_REFRESH: '${{ steps.gate.outputs.intraday }}'
         run: node scripts/build-snapshots.ts
       - run: npm run build
       - uses: actions/upload-artifact@v4

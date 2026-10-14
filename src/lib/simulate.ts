@@ -1,5 +1,5 @@
 /** Deterministic synthetic daily bars used ONLY as a clearly-labelled placeholder when no real equity source is reachable. */
-export interface Bar { t: string; o: number; h: number; l: number; c: number; v: number }
+export interface Bar { t: string; o: number; h: number; l: number; c: number; v: number; /** provisional intraday bar (not an official daily close) */ p?: boolean }
 
 function rng(seed: number) {
   let s = seed >>> 0;

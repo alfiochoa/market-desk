@@ -5,7 +5,7 @@ import { h } from '../core/ui.ts';
 import { bollinger, ema, macd, rsi, sma } from '../lib/indicators.ts';
 import { CRYPTO_TF, cryptoCandles, equities, fxBoard, type Candle, type CryptoTf, type EquitySnap, type FxData } from '../sources/providers.ts';
 
-type Pt = { time: Time; o: number; h: number; l: number; c: number; v?: number };
+type Pt = { time: Time; o: number; h: number; l: number; c: number; v?: number; prov?: boolean };
 const EQ_TF = { '1M': 22, '3M': 66, '6M': 130, '1Y': 260 } as const;
 type EqTf = keyof typeof EQ_TF;
 interface Opts { type: 'candles' | 'line' | 'area'; eqTf: EqTf; cTf: CryptoTf; sma: boolean; ema: boolean; bb: boolean; vol: boolean; rsi: boolean; macd: boolean }
@@ -54,7 +54,7 @@ export const chartWidget: WidgetDef = {
         s.setData(pts.map((p, i) => ({ time: p.time, value: vals[i] })).filter((d) => !Number.isNaN(d.value)));
         return s;
       };
-      if (o.type === 'candles') chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false }).setData(pts.map((p) => ({ time: p.time, open: p.o, high: p.h, low: p.l, close: p.c })));
+      if (o.type === 'candles') chart.addSeries(CandlestickSeries, { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderUpColor: up, borderDownColor: down }).setData(pts.map((p) => ({ time: p.time, open: p.o, high: p.h, low: p.l, close: p.c, ...(p.prov ? { color: css('--warn') + '55', borderColor: css('--warn'), wickColor: css('--warn') } : {}) })));
       else if (o.type === 'line') chart.addSeries(LineSeries, { color: accent, lineWidth: 2 }).setData(pts.map((p) => ({ time: p.time, value: p.c })));
       else chart.addSeries(AreaSeries, { lineColor: accent, topColor: accent + '55', bottomColor: accent + '05', lineWidth: 2 }).setData(pts.map((p) => ({ time: p.time, value: p.c })));
       if (o.sma) lineOf(sma(closes, 20), css('--c1'));
@@ -94,7 +94,8 @@ export const chartWidget: WidgetDef = {
           const s = d.symbols.find((x) => x.symbol === sel.id);
           if (!s) return;
           label = sel.id;
-          pts = s.bars.slice(-EQ_TF[o.eqTf]).map((b) => ({ time: b.t as Time, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v }));
+          pts = s.bars.slice(-EQ_TF[o.eqTf]).map((b) => ({ time: b.t as Time, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, prov: b.p }));
+          if (s.bars.at(-1)?.p && d.intraday) title.textContent = `${sel.id} · USD · daily · last candle = intraday, delayed, provisional (as of ${d.intraday.label})`;
           if (d.kind === 'simulated') title.textContent += ' · SIMULATED placeholder';
           void m; draw();
         });

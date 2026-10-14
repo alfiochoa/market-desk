@@ -2,10 +2,11 @@ import { hierarchy, treemap } from 'd3-hierarchy';
 import type { WidgetDef } from '../core/widget.ts';
 import { bus, store } from '../core/bus.ts';
 import { cls, fmtNum, fmtPct, fmtPrice, h, sparkline } from '../core/ui.ts';
+import { eqNote, isIntraday } from './eqnote.ts';
 import { cryptoBoard, equities, fxBoard, type Coin, type EquitySnap, type FxData } from '../sources/providers.ts';
 
 const chg = (bars: { c: number }[]) => (bars.length > 1 ? (bars.at(-1)!.c / bars.at(-2)!.c - 1) * 100 : 0);
-const simNote = (d: EquitySnap) => (d.kind === 'simulated' ? h('div', { class: 'warn' }, 'SIMULATED placeholder prices — no real equity source was reachable when this snapshot was built. Not market data.') : h('div', { class: d.refreshNote ? 'warn' : 'note' }, d.refreshNote ? `End-of-day, delayed, not real-time. ${d.refreshNote}` : 'End-of-day, delayed, not real-time.'));
+const simNote = eqNote;
 
 function row(label: string, on: () => void, selected: boolean, ...cells: (Node | string)[]) {
   const tr = h('tr', { tabIndex: 0, class: selected ? 'sel' : '', 'aria-label': label, onclick: on, onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); on(); } } });
@@ -23,7 +24,7 @@ export const watchlistWidget: WidgetDef = {
       for (const s of d.symbols) {
         const last = s.bars.at(-1)!.c, c = chg(s.bars);
         tb.append(row(`${s.symbol} ${s.name} ${fmtPrice(last)} ${fmtPct(c)}`, () => bus.select({ kind: 'eq', id: s.symbol }), sel.kind === 'eq' && sel.id === s.symbol,
-          s.symbol, fmtPrice(last), h('span', { class: cls(c) }, fmtPct(c)), sparkline(s.bars.slice(-30).map((b) => b.c))));
+          h('span', {}, s.symbol, isIntraday(d, s.symbol) ? h('sup', { class: 'tag', title: `Intraday, delayed — as of ${d.intraday!.label}` }, 'intraday') : h('sup', { class: 'tag eod', title: 'End-of-day close' }, 'EOD')), fmtPrice(last), h('span', { class: cls(c) }, fmtPct(c)), sparkline(s.bars.slice(-30).map((b) => b.c))));
       }
       body.replaceChildren(simNote(d), h('div', { class: 'scroll' }, h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, ...['Symbol', 'Last', '1d', '30d'].map((t) => h('th', {}, t)))), tb)));
     };
@@ -47,7 +48,7 @@ export const quoteWidget: WidgetDef = {
       body.replaceChildren(simNote(d),
         h('div', { class: 'q-head' }, h('b', { class: 'q-sym' }, s.symbol), h('span', { class: 'muted' }, ` ${s.name} · ${s.sector}`)),
         h('div', { class: 'q-px' }, h('span', { class: 'big' }, fmtPrice(b.c)), h('span', { class: cls(c) }, ` ${fmtNum(b.c - p.c)} (${fmtPct(c)})`)),
-        h('dl', { class: 'kv' }, ...kv('Close date', b.t), ...kv('Open', fmtPrice(b.o)), ...kv('High', fmtPrice(b.h)), ...kv('Low', fmtPrice(b.l)), ...kv('Volume', b.v.toLocaleString('en-US')), ...kv('Prev close', fmtPrice(p.c)), ...kv('52w range', `${fmtPrice(lo)} – ${fmtPrice(hi)}`)));
+        h('dl', { class: 'kv' }, ...kv(b.p ? 'Session (intraday, provisional)' : 'Close date', b.t), ...kv('Open', fmtPrice(b.o)), ...kv('High', fmtPrice(b.h)), ...kv('Low', fmtPrice(b.l)), ...kv('Volume', b.v.toLocaleString('en-US')), ...kv('Prev close', fmtPrice(p.c)), ...kv('52w range', `${fmtPrice(lo)} – ${fmtPrice(hi)}`)));
     };
     const cancel = ctx.load<EquitySnap>('equities', equities, 6 * 3600e3, render);
     const off = bus.onSelect((s) => { if (s.kind === 'eq') { sym = s.id; const d = store.get<EquitySnap>('equities'); if (d) render(d); } });
@@ -113,7 +114,7 @@ export const heatmapWidget: WidgetDef = {
         }
       }
     };
-    body.append(h('div', { class: 'note' }, 'Colour = last daily % change. Tile size = illustrative weight, not live market cap.'), area);
+    body.append(h('div', { class: 'note' }, 'Colour = last % change vs previous close (intraday, delayed for priority symbols; end-of-day for the rest). Tile size = illustrative weight, not live market cap.'), area);
     const ro = new ResizeObserver(draw); ro.observe(area);
     const cancel = ctx.load<EquitySnap>('equities', equities, 6 * 3600e3, (d) => {
       store.set('equities', d);

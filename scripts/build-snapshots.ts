@@ -11,7 +11,8 @@ import { parseFredCsv } from '../src/lib/csv.ts';
 import { dedupe, parseRss, type NewsItem } from '../src/lib/rss.ts';
 import { parseYieldXml } from '../src/lib/treasury.ts';
 import { simulateBars } from '../src/lib/simulate.ts';
-import { CreditsExhausted, dropIncompleteBar, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
+import { INTRADAY_MIN_GAP_MIN, INTRADAY_SYMBOLS, estimateDayTotal, inIntradayWindow, parseQuote, type IntradayQuote, type IntradaySnap } from '../src/lib/intraday.ts';
+import { CreditsExhausted, dropIncompleteBar, MAX_CREDITS_PER_RUN, lastTradingDay, isCreditError, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
 import type { Bar } from '../src/lib/simulate.ts';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
@@ -104,6 +105,50 @@ await step('equities', 'equities.json', async () => {
   equitiesRefreshed = true;
   if (stop) throw new Error(`partial refresh: ${got}/${todo.length} symbols, ${stop}`);
   return `${got} symbols refreshed from Twelve Data (${used} credits)`;
+});
+
+// Intraday quotes for a small priority subset, US market hours only. Not committed (each run deploys its own intraday.json; pushes reuse the
+// last deployed one). Probe with ONE symbol first: if is_market_open is false (holiday / after hours) we stop having spent a single credit.
+const PAGES = 'https://alfiochoa.github.io/market-desk/data/intraday.json';
+await step('intraday', 'intraday.json', async () => {
+  const path = join(OUT, 'intraday.json');
+  const key = process.env.TWELVE_DATA_API_KEY;
+  const prev: IntradaySnap | null = await fetch(PAGES, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (prev?.generatedAt && prev.quotes) writeFileSync(path, JSON.stringify(prev) + '\n');
+  const nowD = new Date();
+  const age = prev?.generatedAt ? (nowD.getTime() - Date.parse(prev.generatedAt)) / 60000 : Infinity;
+  if (process.env.INTRADAY_REFRESH !== '1') return prev ? `not an intraday slot; reusing last deployed quotes (${Math.round(age)} min old)` : 'not an intraday slot; no previous quotes';
+  if (!key) throw new Error('TWELVE_DATA_API_KEY not set');
+  if (!inIntradayWindow(nowD)) { console.log('twelvedata credits used: 0'); return 'outside 13:30-21:00 UTC weekdays; skipped'; }
+  if (age < INTRADAY_MIN_GAP_MIN) { console.log('twelvedata credits used: 0'); return `last refresh ${Math.round(age)} min ago (< ${INTRADAY_MIN_GAP_MIN}); skipped`; }
+  const quotes: Record<string, IntradayQuote> = {};
+  let used = 0;
+  const call = async (syms: string[]) => {
+    const r = await fetch(`https://api.twelvedata.com/quote?symbol=${syms.join(',')}&apikey=${encodeURIComponent(key)}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(45000) });
+    used += syms.length;
+    if (r.status === 429) throw new CreditsExhausted('HTTP 429');
+    if (!r.ok) throw new Error(`HTTP ${r.status} from api.twelvedata.com`);
+    const j = await r.json();
+    if (isCreditError(j)) throw new CreditsExhausted((j as { message?: string }).message ?? '429');
+    for (const sy of syms) { try { quotes[sy] = parseQuote(syms.length === 1 ? j : j[sy], sy); } catch (e) { console.log(`warn ${(e as Error).message}`); } }
+  };
+  const log = () => console.log(`twelvedata credits used: ${used} (day total ~${estimateDayTotal(nowD)}, estimate)`);
+  try {
+    await call([INTRADAY_SYMBOLS[0]]);
+    const open = quotes[INTRADAY_SYMBOLS[0]]?.is_market_open;
+    if (!open) { log(); return open === undefined ? 'probe returned no quote; skipped' : 'market closed (is_market_open=false); skipped after a 1-credit probe'; }
+    const rest = INTRADAY_SYMBOLS.slice(1);
+    for (let i = 0; i < rest.length; i += 7) { await new Promise((r) => setTimeout(r, 62000)); await call(rest.slice(i, i + 7)); }
+  } catch (e) {
+    log();
+    if (e instanceof CreditsExhausted) throw new Error('API credit/rate limit reached; keeping previous quotes', { cause: e });
+    throw e;
+  }
+  log();
+  const got = Object.keys(quotes).length;
+  if (got < 2) throw new Error('too few quotes; keeping previous');
+  save('intraday.json', { generatedAt: new Date().toISOString(), source: 'Twelve Data /quote (delayed, provisional)', quotes } satisfies IntradaySnap);
+  return `${got} quotes refreshed (${used} credits)`;
 });
 
 await step('fred', 'fred.json', async () => {
