@@ -46,7 +46,7 @@ export const chartWidget: WidgetDef = {
       chart?.remove(); chart = null; host.replaceChildren();
       if (!pts.length) return;
       const grid = css('--line'), txt = css('--muted');
-      chart = createChart(host, { autoSize: true, layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: txt, fontFamily: 'ui-monospace, monospace', fontSize: 11 }, grid: { vertLines: { color: grid }, horzLines: { color: grid } }, rightPriceScale: { borderColor: grid }, timeScale: { borderColor: grid, timeVisible: typeof pts[0].time === 'number' }, crosshair: { mode: 0 } });
+      chart = createChart(host, { autoSize: true, layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: txt, fontFamily: 'ui-monospace, monospace', fontSize: 11, panes: { separatorColor: grid, separatorHoverColor: grid + 'aa' } }, grid: { vertLines: { color: grid }, horzLines: { color: grid } }, rightPriceScale: { borderColor: grid }, timeScale: { borderColor: grid, timeVisible: typeof pts[0].time === 'number' }, crosshair: { mode: 0 } });
       const up = css('--up'), down = css('--down'), accent = css('--accent');
       const closes = pts.map((p) => p.c);
       const lineOf = (vals: number[], color: string, pane = 0, width: 1 | 2 = 1) => {

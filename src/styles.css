@@ -54,6 +54,6 @@ details summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
 .pal-list { list-style: none; margin: 0; padding: 4px; max-height: 50vh; overflow: auto; } .pal-list li { display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; } .pal-list li.on { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); } .pal-list em { color: var(--muted); font-style: normal; font-size: 11px; } .pal-list li.none { color: var(--muted); cursor: default; }
 .pal-foot { padding: 6px 12px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--line); }
 @media (max-width: 900px) {
-  .grid { display: flex; flex-direction: column; gap: 6px; height: auto !important; } .panel { position: relative; width: 100%; } .head { cursor: default; } .resize { display: none; } .badge { max-width: 70%; }
+  .head { flex-wrap: wrap; } .badge { max-width: 100%; flex-basis: 100%; order: 5; margin-left: 0 !important; text-align: left; } .x { order: 4; } .grid { display: flex; flex-direction: column; gap: 6px; height: auto !important; } .panel { position: relative; width: 100%; } .head { cursor: default; } .resize { display: none; } 
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
