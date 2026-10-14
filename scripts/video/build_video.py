@@ -98,7 +98,7 @@ def build(music):
     end = card_png("end_music" if music else "end", [("Demo / educational data", FB, 52, WHITE, 30),
                                                     ("Alfredo Ochoa | AI Automation & Data Integration", FB, 30, TEAL, 22),
                                                     (REPO, FR, 30, SLATE, 0)],
-                   small="Free: GitHub Pages + Actions. Not investment advice. Equity prices are SIMULATED unless a data key is set.", credit=CREDIT if music else None)
+                   small="Free: GitHub Pages + Actions. Not investment advice. Equities: end-of-day, delayed, not real-time.", credit=CREDIT if music else None)
     segs = []
     def add(name, fn): out = P(f"seg_{name}.mp4"); fn(out); segs.append(out)
     add("a_hook", lambda o: seg_card(hook, 4.5, o))
@@ -107,8 +107,8 @@ def build(music):
                                                  (9.6, 99, "Indicators written and tested in-house", "SMA, EMA, Bollinger, RSI, MACD checked against published values")], o))
     add("d_badges", lambda o: clip("badges", [(0.2, 99, "Every panel states its source", "LIVE, CACHED or SNAPSHOT, with the as-of time")], o))
     add("e_outage", lambda o: clip("outage", [(0.2, 99, "Provider down? The panel says so", "Recorded with the live APIs blocked: widgets fall back to snapshots")], o))
-    add("f_portfolio", lambda o: clip("portfolio", [(0.2, 5.4, "Heatmap by daily % change", "Equity data is end-of-day; placeholders are labelled SIMULATED"),
-                                                     (5.6, 99, "Portfolio P&L, stored only in your browser", "Average cost, realized and unrealized, on SIMULATED prices")], o))
+    add("f_portfolio", lambda o: clip("portfolio", [(0.2, 5.4, "Heatmap by daily % change", "Equity data is end-of-day; delayed, not real-time"),
+                                                     (5.6, 99, "Portfolio P&L, stored only in your browser", "Average cost, realized and unrealized, on end-of-day closes")], o))
     add("g_end", lambda o: seg_card(end, 6.0, o))
     final = P("video_music_noaudio.mp4" if music else "video_silent.mp4"); dur = join(segs, final)
     name = "market-desk-music.mp4" if music else "market-desk.mp4"; dst = os.path.join(OUTDIR, name)
