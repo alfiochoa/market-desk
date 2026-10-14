@@ -78,9 +78,11 @@ npm ci
 npm run dev        # http://localhost:5173
 ```
 
-Other scripts: `npm test` (unit), `npm run build && npm run e2e` (Playwright smoke), `npm run lint`, `npm run typecheck`, `npm run snapshots` (rebuild `public/data`).
+Other scripts (`scripts/gallery.mjs` re-takes the screenshots from the deployed site; `scripts/video/` records and assembles the demo video): `npm test` (unit), `npm run build && npm run e2e` (Playwright smoke), `npm run lint`, `npm run typecheck`, `npm run snapshots` (rebuild `public/data`).
 
 ## Quality
+
+**36 unit tests (vitest) + 9 Playwright smoke tests**, all green in CI.
 
 * **Unit tests (vitest)**: indicators vs reference values, P&L math and CSV round-trip, layout engine (no overlap), fallback chain / SWR cache / timeout / corrupt storage with mocked `fetch`, provider normalisation (CoinGecko → Binance → snapshot), RSS dedupe, Treasury XML, Stooq and Twelve Data parsers.
 * **Playwright smoke (CI)**: loads the *built* site with provider APIs mocked by fixtures; asserts every widget renders with its badge, the palette opens and navigates, `Alt+2` focus, portfolio persistence, drag + persisted layout + reset, a **full provider outage** (all live widgets fall back to snapshots and say so) and a **snapshot failure** (explicit error, not a blank panel).
