@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
-      - name: Decide what to refresh (EOD: 23:xx UTC weekdays or manual; intraday: scheduled runs or manual, gated again in code)
+      - name: 'Decide what to refresh (EOD at 23:xx UTC weekdays or manual; intraday on scheduled runs or manual, gated again in code)'
         id: gate
         run: |
           r=0
