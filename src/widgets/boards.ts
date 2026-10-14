@@ -88,7 +88,7 @@ export const fxWidget: WidgetDef = {
 const heat = (c: number) => { const a = Math.min(Math.abs(c) / 3, 1); return `color-mix(in srgb, ${c >= 0 ? 'var(--up)' : 'var(--down)'} ${Math.round(18 + a * 60)}%, var(--panel))`; };
 
 export const heatmapWidget: WidgetDef = {
-  type: 'heatmap', title: 'Heatmap · daily % change', w: 7, h: 9,
+  type: 'heatmap', title: 'Heatmap · daily % change', w: 7, h: 11,
   mount(body, ctx) {
     const area = h('div', { class: 'heat', role: 'group', 'aria-label': 'Treemap of watchlist by daily change' });
     let data: EquitySnap | null = null;
