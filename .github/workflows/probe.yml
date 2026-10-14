@@ -1,0 +1,13 @@
+name: Probe Twelve Data (one-off, manual)
+on: { workflow_dispatch: }
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: quote + price for AAPL (2 credits; response never contains the key)
+        env: { K: '${{ secrets.TWELVE_DATA_API_KEY }}' }
+        run: |
+          date -u +"now_utc=%Y-%m-%dT%H:%M:%SZ"
+          curl -s -w '\nHTTP %{http_code}\n' "https://api.twelvedata.com/quote?symbol=AAPL&apikey=$K" | sed "s/$K/***/g"
+          curl -s -w '\nHTTP %{http_code}\n' "https://api.twelvedata.com/price?symbol=AAPL&apikey=$K" | sed "s/$K/***/g"
