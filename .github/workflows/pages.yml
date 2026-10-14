@@ -1,0 +1,45 @@
+name: Build snapshots & deploy Pages
+on:
+  push: { branches: [main] }
+  schedule: [{ cron: '23 * * * *' }]   # hourly; GitHub may delay scheduled runs
+  workflow_dispatch:
+permissions: { contents: read, pages: write, id-token: write }
+concurrency: { group: pages, cancel-in-progress: false }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - name: Build data snapshots (each source independent; failures keep the previous file)
+        run: node scripts/build-snapshots.ts
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with: { name: data, path: public/data, retention-days: 3 }
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: '${{ steps.d.outputs.page_url }}' }
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4
+  baseline:
+    # Once a day, commit the fresh snapshots so the repo's fallback copy never gets very old.
+    needs: deploy
+    if: github.event_name == 'schedule' && github.event.schedule == '23 * * * *'
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: data, path: public/data }
+      - name: Commit if the UTC hour is 05 and files changed
+        run: |
+          [ "$(date -u +%H)" = "05" ] || exit 0
+          git config user.name "market-desk-bot"; git config user.email "market-desk-bot@users.noreply.github.com"
+          git add public/data
+          git diff --cached --quiet || { git commit -m "chore(data): daily snapshot baseline"; git pull --rebase; git push; }

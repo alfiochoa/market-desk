@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="market-desk: a keyboard-driven market terminal demo on free public data. Educational, delayed/indicative data, not investment advice." />
+  <meta name="color-scheme" content="dark" />
+  <title>market-desk · demo terminal</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230b0e13'/%3E%3Cpath d='M2 12l4-5 3 3 5-7' fill='none' stroke='%234aa3ff' stroke-width='2'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <a class="skip" href="#workspace">Skip to workspace</a>
+  <header class="top">
+    <div class="brand"><b>market</b><span>·desk</span><em>demo</em></div>
+    <button id="open-pal" class="btn ghost" aria-label="Open command palette (Ctrl or Cmd plus K)">Search / commands <kbd>Ctrl K</kbd></button>
+    <span class="grow"></span>
+    <span id="health" class="health" role="status"></span>
+    <button id="reset" class="btn ghost">Reset layout</button>
+  </header>
+  <div id="workspace"></div>
+  <footer class="foot">
+    <p><b>Demo / educational only. Not investment advice.</b> Data is delayed, indicative or end-of-day and may be wrong or stale; each panel's badge shows its source, as-of time and whether it is live, cached or a snapshot. Equity prices are end-of-day snapshots, never real-time; if a snapshot says SIMULATED it is not market data. Not affiliated with, endorsed by or sponsored by any data provider. Data from CoinGecko, Binance public market data, Frankfurter/ECB, US Treasury, FRED, Federal Reserve, ECB and SEC — see the README for terms.</p>
+    <p>Shortcuts: <kbd>Ctrl/⌘ K</kbd> palette · <kbd>Alt 1–9</kbd> jump to panel · drag headers to move, corner to resize (or focus a header, arrows move, Shift+arrows resize).</p>
+  </footer>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
