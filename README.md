@@ -105,11 +105,11 @@ MIT licensed.
 
 ## Twelve Data credit budget (shared key)
 
-The free Twelve Data plan gives **800 credits/day, 8/minute**; one symbol = 1 credit. The author's key is shared with another project (`sp500-tracker`, ≤ 320 credits per weekday), so market-desk is budgeted to **≤ 60 credits/day** and normally uses ~35 (the symbol list, once per weekday):
+The free Twelve Data plan gives **800 credits/day, 8/minute**; one symbol = 1 credit. The author's key is shared with another project (`sp500-tracker`, ≤ 320 credits per weekday), so market-desk is budgeted to **≤ 60 credits/day** and normally uses ~30 (the symbol list, once per weekday):
 
 | Project | Credits/day |
 |---|---|
-| market-desk | ~35 (hard cap `MAX_CREDITS_PER_RUN = 40` per run, 1 refresh per weekday) |
+| market-desk | ~30 (hard cap `MAX_CREDITS_PER_RUN = 40` per run, 1 refresh per weekday) |
 | sp500-tracker | ≤ 320 on weekdays |
 | Total | < 800 |
 

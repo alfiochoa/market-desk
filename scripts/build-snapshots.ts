@@ -11,7 +11,7 @@ import { parseFredCsv } from '../src/lib/csv.ts';
 import { dedupe, parseRss, type NewsItem } from '../src/lib/rss.ts';
 import { parseYieldXml } from '../src/lib/treasury.ts';
 import { simulateBars } from '../src/lib/simulate.ts';
-import { CreditsExhausted, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
+import { CreditsExhausted, dropIncompleteBar, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
 import type { Bar } from '../src/lib/simulate.ts';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
@@ -53,7 +53,11 @@ await step('equities', 'equities.json', async () => {
   const prev = has('equities.json') ? JSON.parse(readFileSync(path, 'utf8')) : null;
   const refresh = process.env.EQUITIES_REFRESH === '1';
   if (!refresh) {
-    if (prev) { console.log('twelvedata credits used: 0'); return `reusing committed baseline (${prev.kind}, no API calls)`; }
+    if (prev) {
+      console.log('twelvedata credits used: 0');
+      const cut = prev.symbols.map((e: { bars: Bar[] }) => dropIncompleteBar(e.bars, new Date()));
+      if (prev.kind === 'twelvedata' && cut.some((b: Bar[], i: number) => b.length !== prev.symbols[i].bars.length)) { prev.symbols.forEach((e: { bars: Bar[] }, i: number) => { e.bars = cut[i]; }); save('equities.json', prev); }
+      return `reusing committed baseline (${prev.kind}, no API calls)`; }
     const end = new Date().toISOString().slice(0, 10);
     save('equities.json', { generatedAt: now, kind: 'simulated', source: 'SIMULATED placeholder (no real equity source reachable)', symbols: EQUITIES.map((e, i) => ({ ...e, bars: simulateBars(1000 + i, e.px, end) })) });
     throw new Error('no baseline yet; wrote SIMULATED placeholder prices');
@@ -78,7 +82,7 @@ await step('equities', 'equities.json', async () => {
       if (r.status === 429) throw new CreditsExhausted('HTTP 429');
       if (!r.ok) throw new Error(`HTTP ${r.status} from api.twelvedata.com`);
       const p = parseTwelveDataPartial(await r.json(), chunk);
-      Object.assign(bars, p.bars);
+      for (const [k, v] of Object.entries(p.bars)) bars[k] = dropIncompleteBar(v, new Date());
       for (const m of p.errors) console.log(`warn ${m}`);
     }
   } catch (e) {

@@ -49,3 +49,9 @@ export function parseTwelveDataPartial(json: unknown, symbols: string[]): { bars
   }
   return { bars, errors };
 }
+
+/** Drops a trailing bar of a session that has not closed yet at `now` (the API returns the in-progress day); keeps snapshots strictly end-of-day. */
+export function dropIncompleteBar(bars: Bar[], now: Date): Bar[] {
+  const last = bars.at(-1);
+  return last && Date.parse(`${last.t}T22:00:00Z`) > now.getTime() ? bars.slice(0, -1) : bars;
+}

@@ -12,7 +12,7 @@ Static hosting (GitHub Pages), no backend, no secrets in the client, and **no si
 | `src/core/palette.ts` | `Ctrl/⌘+K` palette: scored filtering, listbox ARIA, symbol/widget/action commands |
 | `src/core/bus.ts` | Selected-instrument bus and a tiny shared store (equity snapshot shared by watchlist, quote, heatmap, portfolio, chart) |
 | `src/sources/providers.ts` | Every source as a fallback chain (CoinGecko → Binance → snapshot, Frankfurter → snapshot, Treasury → snapshot, FRED/equities/news snapshot only) |
-| `src/lib/*` | Pure, unit-tested logic: indicators, portfolio P&L + CSV, layout engine, RSS parse/dedupe, Treasury XML, FRED CSV, Stooq/Twelve Data parsers, deterministic simulator |
+| `src/lib/*` | Pure, unit-tested logic: indicators, portfolio P&L + CSV, layout engine, RSS parse/dedupe, Treasury XML, FRED CSV, Stooq/Twelve Data parsers and credit budget, deterministic simulator |
 | `src/widgets/*` | The nine widgets (`chart`, `boards`, `info`) registered in `registry.ts` |
 | `scripts/build-snapshots.ts` | Node (type-stripping) snapshot builder run by Actions; shares `src/lib` parsers with the app |
 
@@ -52,7 +52,7 @@ sequenceDiagram
 `LIVE` fetched now from the origin API · `CACHED` served from this browser's cache (hover shows if a refresh failed) · `SNAPSHOT` file built by the Action (as-of shown) · `ERROR` every source failed. Equity snapshots built from the placeholder generator say `SIMULATED placeholder`.
 
 ## Snapshot pipeline (`.github/workflows/pages.yml`)
-Hourly (+ on push and manually): `build-snapshots.ts` → `vite build` → deploy to Pages. Each source step is isolated; failure keeps the previous file and is recorded in `meta.json` (shown in the header). Once a day the job commits `public/data` so the repository copy (the last-resort fallback) stays fresh. Stooq is tried first; HTTP 403 / verification pages are treated as "blocked" and are not circumvented. With a `TWELVE_DATA_API_KEY` secret the builder fetches 8 symbols/minute (free-tier limit) at most once per 20 h; the key is only passed through the environment and never logged.
+Hourly (+ on push and manually): `build-snapshots.ts` → `vite build` → deploy to Pages. Each source step is isolated; failure keeps the previous file and is recorded in `meta.json` (shown in the header). Equities are the exception: real data (Twelve Data, 1 credit/symbol, key shared with another project, cap `MAX_CREDITS_PER_RUN = 40`) is fetched only by the 23:xx UTC weekday run or a manual run with `refresh_equities=true`, only for symbols older than the last trading day; in-progress session bars are dropped so the snapshot is strictly end-of-day; the baseline is committed right after the refresh and reused by every other run; 429 / out-of-credits keeps the previous snapshot and flags it in the badge. Other sources are committed daily at 05 UTC. Stooq is not used (403 / verification page is an access control we do not bypass). The key is only passed through the environment and never logged.
 
 ## Why these choices
 * **Own layout engine** (≈40 lines, tested) instead of a grid library: fewer dependencies, full control of keyboard support.

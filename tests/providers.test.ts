@@ -60,7 +60,7 @@ describe('Twelve Data parser (optional keyed fallback)', () => {
   });
 });
 
-import { CreditsExhausted, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
+import { dropIncompleteBar, CreditsExhausted, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
 describe('Twelve Data credit budget', () => {
   it('caps a run at 40 credits (key is shared; 800/day total)', () => {
     expect(MAX_CREDITS_PER_RUN).toBe(40);
@@ -83,5 +83,13 @@ describe('Twelve Data credit budget', () => {
     expect(() => parseTwelveDataPartial({ A: { code: 429, status: 'error', message: 'rate limit' } }, ['A'])).toThrow(CreditsExhausted);
     const r = parseTwelveDataPartial({ A: { status: 'error', message: 'bad symbol' }, B: { status: 'ok', values: [{ datetime: '2026-10-14', open: '1', high: '2', low: '1', close: '2', volume: '3' }] } }, ['A', 'B']);
     expect(Object.keys(r.bars)).toEqual(['B']); expect(r.errors.length).toBe(1);
+  });
+});
+
+describe('end-of-day only', () => {
+  const b = (t: string) => ({ t, o: 1, h: 1, l: 1, c: 1, v: 1 });
+  it('drops the in-progress session bar, keeps closed ones', () => {
+    expect(dropIncompleteBar([b('2026-10-13'), b('2026-10-14')], new Date('2026-10-14T17:24:00Z')).length).toBe(1);
+    expect(dropIncompleteBar([b('2026-10-13'), b('2026-10-14')], new Date('2026-10-14T23:25:00Z')).length).toBe(2);
   });
 });
