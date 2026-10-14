@@ -98,7 +98,7 @@ def build(music):
     end = card_png("end_music" if music else "end", [("Demo / educational data", FB, 52, WHITE, 30),
                                                     ("Alfredo Ochoa | AI Automation & Data Integration", FB, 30, TEAL, 22),
                                                     (REPO, FR, 30, SLATE, 0)],
-                   small="Free: GitHub Pages + Actions. Not investment advice. Equities: end-of-day, delayed, not real-time.", credit=CREDIT if music else None)
+                   small="Free: GitHub Pages + Actions. Not investment advice. Equities: end-of-day + delayed intraday (priority symbols), never real-time.", credit=CREDIT if music else None)
     segs = []
     def add(name, fn): out = P(f"seg_{name}.mp4"); fn(out); segs.append(out)
     add("a_hook", lambda o: seg_card(hook, 4.5, o))
