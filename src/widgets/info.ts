@@ -20,7 +20,7 @@ function lineSvg(xs: string[], ys: number[], w = 520, hgt = 150): SVGElement {
 }
 
 export const macroWidget: WidgetDef = {
-  type: 'macro', title: 'Macro · yield curve & FRED', w: 7, h: 12,
+  type: 'macro', title: 'Macro · yield curve & FRED', w: 7, h: 14,
   mount(body, ctx) {
     const curveBox = h('div', { class: 'curve' });
     const fredBox = h('div', { class: 'fred' });

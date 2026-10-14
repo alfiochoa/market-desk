@@ -9,7 +9,8 @@ const open = async (opts = {}, init, ready = '[data-widget=macro] svg.linechart'
   if (init) await p.addInitScript(init);
   await p.goto(URL);
   await p.waitForSelector(ready, { timeout: 40000 });
-  await p.waitForTimeout(2500);
+  await p.waitForFunction(() => !document.querySelector('.badge.loading'), null, { timeout: 40000 });
+  await p.waitForTimeout(1500);
   return p;
 };
 let p = await open();
