@@ -3,18 +3,31 @@ on:
   push: { branches: [main] }
   schedule: [{ cron: '23 * * * *' }]   # hourly; GitHub may delay scheduled runs
   workflow_dispatch:
+    inputs:
+      refresh_equities: { description: 'Fetch real end-of-day equities from Twelve Data (uses up to ~35 credits of a shared key)', type: boolean, default: false }
 permissions: { contents: read, pages: write, id-token: write }
 concurrency: { group: pages, cancel-in-progress: false }
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs: { refreshed: '${{ steps.snap.outputs.equities_refreshed }}' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
+      - name: Decide whether to refresh equities (23:xx UTC weekdays, or manual with refresh_equities=true)
+        id: gate
+        run: |
+          r=0
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%H)" = "23" ] && [ "$(date -u +%u)" -le 5 ]; then r=1; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.refresh_equities }}" = "true" ]; then r=1; fi
+          echo "refresh=$r" >> "$GITHUB_OUTPUT"
       - name: Build data snapshots (each source independent; failures keep the previous file)
-        env: { TWELVE_DATA_API_KEY: '${{ secrets.TWELVE_DATA_API_KEY }}' }
+        id: snap
+        env:
+          TWELVE_DATA_API_KEY: '${{ secrets.TWELVE_DATA_API_KEY }}'
+          EQUITIES_REFRESH: '${{ steps.gate.outputs.refresh }}'
         run: node scripts/build-snapshots.ts
       - run: npm run build
       - uses: actions/upload-artifact@v4
@@ -29,18 +42,19 @@ jobs:
       - id: d
         uses: actions/deploy-pages@v4
   baseline:
-    # Once a day, commit the fresh snapshots so the repo's fallback copy never gets very old.
-    needs: deploy
-    if: github.event_name == 'schedule' && github.event.schedule == '23 * * * *'
+    # Commit the snapshots right after an equities refresh (so later runs reuse it), and once a day at 05 UTC for the other sources.
+    needs: [build, deploy]
+    if: needs.build.outputs.refreshed == 'true' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: data, path: public/data }
-      - name: Commit if the UTC hour is 05 and files changed
+      - name: Commit if equities were refreshed (or UTC hour is 05) and files changed
+        env: { REFRESHED: '${{ needs.build.outputs.refreshed }}' }
         run: |
-          [ "$(date -u +%H)" = "05" ] || exit 0
+          [ "$REFRESHED" = "true" ] || [ "$(date -u +%H)" = "05" ] || exit 0
           git config user.name "market-desk-bot"; git config user.email "market-desk-bot@users.noreply.github.com"
           git add public/data
-          git diff --cached --quiet || { git commit -m "chore(data): daily snapshot baseline"; git pull --rebase; git push; }
+          git diff --cached --quiet || { git commit -m "chore(data): snapshot baseline"; git pull --rebase; git push; }

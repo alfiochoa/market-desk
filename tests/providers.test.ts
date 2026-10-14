@@ -59,3 +59,29 @@ describe('Twelve Data parser (optional keyed fallback)', () => {
     expect(() => parseTwelveData({ AAPL: { status: 'error', message: 'limit' } }, ['AAPL'])).toThrow(/limit/);
   });
 });
+
+import { CreditsExhausted, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
+describe('Twelve Data credit budget', () => {
+  it('caps a run at 40 credits (key is shared; 800/day total)', () => {
+    expect(MAX_CREDITS_PER_RUN).toBe(40);
+    const many = Array.from({ length: 100 }, (_, i) => `S${i}`);
+    expect(planFetch(many, {}, new Date('2026-10-14T23:30:00Z')).length).toBe(MAX_CREDITS_PER_RUN);
+  });
+  it('finds the last US trading day (weekends, before/after the daily cut-off)', () => {
+    expect(lastTradingDay(new Date('2026-10-14T23:30:00Z'))).toBe('2026-10-14'); // Wed after close
+    expect(lastTradingDay(new Date('2026-10-14T08:00:00Z'))).toBe('2026-10-13'); // Wed morning -> Tue
+    expect(lastTradingDay(new Date('2026-10-17T12:00:00Z'))).toBe('2026-10-16'); // Sat -> Fri
+    expect(lastTradingDay(new Date('2026-10-19T08:00:00Z'))).toBe('2026-10-16'); // Mon morning -> Fri
+  });
+  it('fetches only missing or outdated symbols, never the fresh ones', () => {
+    const now = new Date('2026-10-14T23:30:00Z');
+    expect(planFetch(['A', 'B', 'C'], { A: '2026-10-14', B: '2026-10-13' }, now)).toEqual(['B', 'C']);
+    expect(planFetch(['A', 'B'], { A: '2026-10-14', B: '2026-10-14' }, now)).toEqual([]);
+  });
+  it('treats 429 / "run out of API credits" as exhaustion, not as a data error', () => {
+    expect(() => parseTwelveDataPartial({ code: 429, status: 'error', message: 'You have run out of API credits for the day.' }, ['A'])).toThrow(CreditsExhausted);
+    expect(() => parseTwelveDataPartial({ A: { code: 429, status: 'error', message: 'rate limit' } }, ['A'])).toThrow(CreditsExhausted);
+    const r = parseTwelveDataPartial({ A: { status: 'error', message: 'bad symbol' }, B: { status: 'ok', values: [{ datetime: '2026-10-14', open: '1', high: '2', low: '1', close: '2', volume: '3' }] } }, ['A', 'B']);
+    expect(Object.keys(r.bars)).toEqual(['B']); expect(r.errors.length).toBe(1);
+  });
+});

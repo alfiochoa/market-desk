@@ -5,7 +5,7 @@ import { cls, fmtNum, fmtPct, fmtPrice, h, sparkline } from '../core/ui.ts';
 import { cryptoBoard, equities, fxBoard, type Coin, type EquitySnap, type FxData } from '../sources/providers.ts';
 
 const chg = (bars: { c: number }[]) => (bars.length > 1 ? (bars.at(-1)!.c / bars.at(-2)!.c - 1) * 100 : 0);
-const simNote = (d: EquitySnap) => (d.kind === 'simulated' ? h('div', { class: 'warn' }, 'SIMULATED placeholder prices — no real equity source was reachable when this snapshot was built. Not market data.') : h('div', { class: 'note' }, 'End-of-day, delayed, not real-time.'));
+const simNote = (d: EquitySnap) => (d.kind === 'simulated' ? h('div', { class: 'warn' }, 'SIMULATED placeholder prices — no real equity source was reachable when this snapshot was built. Not market data.') : h('div', { class: d.refreshNote ? 'warn' : 'note' }, d.refreshNote ? `End-of-day, delayed, not real-time. ${d.refreshNote}` : 'End-of-day, delayed, not real-time.'));
 
 function row(label: string, on: () => void, selected: boolean, ...cells: (Node | string)[]) {
   const tr = h('tr', { tabIndex: 0, class: selected ? 'sel' : '', 'aria-label': label, onclick: on, onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); on(); } } });

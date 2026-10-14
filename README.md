@@ -6,7 +6,7 @@ A keyboard-driven, dark, dense **market terminal** that runs 100% static on GitH
 
 ![market-desk overview](docs/screens/overview.png)
 
-> **Demo / educational only. Not investment advice.** Data is delayed, indicative or end-of-day and can be stale or wrong. Every panel carries a badge with its **source, as-of time and state** (`LIVE`, `CACHED`, `SNAPSHOT`, `ERROR`). Equity prices are end-of-day snapshots, never real-time, and when no real equity source was reachable the snapshot is explicitly labelled **SIMULATED** (see [Limitations](#honest-limitations)). Not affiliated with, endorsed by or sponsored by any data provider.
+> **Demo / educational only. Not investment advice.** Data is delayed, indicative or end-of-day and can be stale or wrong. Every panel carries a badge with its **source, as-of time and state** (`LIVE`, `CACHED`, `SNAPSHOT`, `ERROR`). Equity prices are end-of-day snapshots (Twelve Data), never real-time; if no real baseline exists the snapshot is explicitly labelled **SIMULATED** (see [Limitations](#honest-limitations)). Not affiliated with, endorsed by or sponsored by any data provider.
 
 ## Why
 
@@ -18,7 +18,7 @@ Free public market data is scattered across APIs that go down, rate-limit, or la
 |---|---|
 | ![chart](docs/screens/chart-indicators.png) **Chart**: candles/line/area, volume, SMA, EMA, Bollinger, RSI, MACD (own implementations, unit-tested). Live BTC/USD from Binance public market data. | ![palette](docs/screens/palette.png) **Command palette** (`Ctrl/⌘+K`): symbols, jump to / add widgets, reset layout. |
 | ![macro](docs/screens/macro.png) **Macro**: US Treasury par yield curve (latest vs ~1 month earlier) and FRED series. | ![heatmap](docs/screens/heatmap.png) **Heatmap**: treemap by sector, coloured by daily % change (own d3-hierarchy layout). |
-| ![portfolio](docs/screens/portfolio.png) **Portfolio** (localStorage): lots, average cost, realized/unrealized P&L, CSV export/import. Values shown use the SIMULATED placeholder prices. | <img src="docs/screens/mobile.png" width="260" alt="mobile"> **Responsive**: panels stack on small screens. |
+| ![portfolio](docs/screens/portfolio.png) **Portfolio** (localStorage): lots, average cost, realized/unrealized P&L, CSV export/import. | <img src="docs/screens/mobile.png" width="260" alt="mobile"> **Responsive**: panels stack on small screens. |
 
 ## Features
 
@@ -46,7 +46,7 @@ Free public market data is scattered across APIs that go down, rate-limit, or la
 | FX | [Frankfurter](https://frankfurter.dev) (ECB reference rates) | Action snapshot | Free, open source, no key. ECB reference rates are indicative, published once per working day; free reuse with source attribution. |
 | Yield curve | [US Treasury daily par yield curve](https://home.treasury.gov/resource-center/data-chart-center/interest-rates) XML | Action snapshot | US government data (public domain). |
 | FRED series (DGS10, T10Y2Y, FEDFUNDS, UNRATE) | *none*: `fredgraph.csv` sends no CORS headers | Action snapshot (CSV fetched server-side, no key) | [FRED](https://fred.stlouisfed.org/) data, Federal Reserve Bank of St. Louis; cite the source, not endorsed by the St. Louis Fed. Only series published by the Fed / US Treasury / BLS are used; no S&P/NASDAQ/CBOE-licensed series. |
-| US equities | *none* (browsers can't call EOD sources) | Action snapshot: **Stooq** CSV → optional **Twelve Data** (free key as repo secret) → last snapshot → SIMULATED placeholder | Stooq currently answers scripted clients with HTTP 403 / a browser-verification page. That is an access control and is **not bypassed**. Twelve Data free-plan terms apply if you add a key. |
+| US equities | *none* (browsers can't call EOD sources) | Action snapshot from **Twelve Data** (free key as repo secret), refreshed once per weekday after the US close; the committed `public/data/equities.json` is the baseline; if the API is unavailable the previous snapshot is kept and the badge says so | Twelve Data free-plan terms apply. Stooq blocks scripted clients (403 / browser verification) — that access control is **not bypassed** and Stooq is not used. |
 | News | *none* (feeds lack CORS) | Action snapshot of [Federal Reserve](https://www.federalreserve.gov/feeds/feeds.htm), [ECB](https://www.ecb.europa.eu/rss/), [SEC](https://www.sec.gov/news/pressreleases.rss) RSS | Official feeds; only headline + link are stored. Fetched ≤ once/hour with an identifying User-Agent (SEC fair-access). |
 
 Libraries: lightweight-charts (Apache-2.0; its attribution logo is kept on charts), d3-hierarchy (ISC), Vite (MIT).
@@ -90,7 +90,7 @@ Other scripts (`scripts/gallery.mjs` re-takes the screenshots from the deployed 
 
 ## Honest limitations
 
-* **Equities are not live and, right now, not real.** Stooq blocks scripted downloads, so unless you add a free `TWELVE_DATA_API_KEY` repository secret the equities snapshot is a deterministic **SIMULATED placeholder**, labelled as such in every badge, banner and the portfolio panel. The pipeline, parsers and fallbacks are in place and tested with fixtures; the Twelve Data path was not exercised against the live API.
+* **Equities are end-of-day, delayed, not real-time.** Only symbols whose last bar is older than the last US trading day are fetched, once per weekday at 23:xx UTC (or on a manual run). No holiday calendar: on a market holiday the same last bar is re-fetched (a few credits at most). If the credit limit is hit, the previous snapshot is kept and flagged in the badge. Without any key a clearly labelled SIMULATED placeholder is used.
 * Crypto/FX/yield-curve panels call third-party APIs from your browser; they can be rate-limited or geo-blocked (Binance's main host is blocked in some countries; the public market-data mirror is used). Falling back is automatic and visible.
 * FRED, news and equities only update when the Action runs (hourly, best effort: GitHub may delay scheduled jobs).
 * Heatmap tile size uses *illustrative* weights, not live market caps. The yield curve compares the latest date with ~21 trading days earlier.
@@ -102,3 +102,15 @@ Other scripts (`scripts/gallery.mjs` re-takes the screenshots from the deployed 
 Concept inspired by the idea of a widget-based market workspace (e.g. OpenTerminal). All code, layout, copy and name here are original; no code, text or assets were copied and none of its unofficial endpoints are used.
 
 MIT licensed.
+
+## Twelve Data credit budget (shared key)
+
+The free Twelve Data plan gives **800 credits/day, 8/minute**; one symbol = 1 credit. The author's key is shared with another project (`sp500-tracker`, ≤ 320 credits per weekday), so market-desk is budgeted to **≤ 60 credits/day** and normally uses ~35 (the symbol list, once per weekday):
+
+| Project | Credits/day |
+|---|---|
+| market-desk | ~35 (hard cap `MAX_CREDITS_PER_RUN = 40` per run, 1 refresh per weekday) |
+| sp500-tracker | ≤ 320 on weekdays |
+| Total | < 800 |
+
+Rules enforced in `scripts/build-snapshots.ts`: real data is fetched **only** by the scheduled 23:xx UTC weekday run or a manual run with `refresh_equities=true`; pushes and the other hourly runs reuse the committed baseline and never call the API; only missing/outdated symbols are fetched; the log prints `twelvedata credits used: N`; HTTP 429 / "run out of API credits" keeps the previous snapshot. **If you fork this, use your own free key** (repo secret `TWELVE_DATA_API_KEY`) — do not reuse someone else's.
