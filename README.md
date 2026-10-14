@@ -82,7 +82,7 @@ Other scripts (`scripts/gallery.mjs` re-takes the screenshots from the deployed 
 
 ## Quality
 
-**45 unit tests (vitest) + 11 Playwright smoke tests**, all green in CI.
+**59 unit tests (vitest) + 11 Playwright smoke tests**, all green in CI.
 
 * **Unit tests (vitest)**: indicators vs reference values, P&L math and CSV round-trip, layout engine (no overlap), fallback chain / SWR cache / timeout / corrupt storage with mocked `fetch`, provider normalisation (CoinGecko → Binance → snapshot), RSS dedupe, Treasury XML, Stooq and Twelve Data parsers.
 * **Playwright smoke (CI)**: loads the *built* site with provider APIs mocked by fixtures; asserts every widget renders with its badge, the palette opens and navigates, `Alt+2` focus, portfolio persistence, drag + persisted layout + reset, a **full provider outage** (all live widgets fall back to snapshots and say so) and a **snapshot failure** (explicit error, not a blank panel).
@@ -116,3 +116,8 @@ The free Twelve Data plan gives **800 credits/day, 8/minute**; one symbol = 1 cr
 | Total | < 800 |
 
 Rules in `scripts/build-snapshots.ts`: EOD data is fetched **only** by the 23:xx UTC weekday run or a manual run with `refresh_equities=true`, only for symbols older than the last trading day (cap `MAX_CREDITS_PER_RUN = 40`); intraday quotes only on scheduled runs or a manual `refresh_intraday=true`, inside 13:30–21:00 UTC weekdays, at least 25 min apart, after a 1-symbol `is_market_open` probe; pushes never call the API. The log prints `twelvedata credits used: N (day total ~M, estimate)`. HTTP 429 / "run out of API credits" keeps the previous data. **If you fork this, use your own free key** (repo secret `TWELVE_DATA_API_KEY`).
+
+### Account-wide safety guard
+
+Because the key is shared and the account (not this repo) owns the 800/day and 8/min limits, **every paid call is preceded by the free `GET /api_usage`** (it spends no credits): intraday quotes run only if `daily_usage + planned ≤ 600`, the daily EOD refresh only if `daily_usage + planned ≤ 700`, and nothing automatic runs above **760** (reserve for manual use). If `/api_usage` fails, the run **fails closed**: no credits are spent and the previous snapshot is kept. The per-minute window is respected using the account's `current_usage` (wait 62 s once if another project is mid-minute, else keep old data); an HTTP 429 or "run out of API credits for the current minute" is retried **once** after 62 s, never hammered. The key is only handed to scheduled and manually dispatched runs; pushes, PRs, CI, e2e and unit tests never call `api.twelvedata.com` (a test setup blocks it, e2e aborts and asserts zero requests, and CI has no secret). Each run logs `twelvedata account usage: N/800 before, M after`.
+

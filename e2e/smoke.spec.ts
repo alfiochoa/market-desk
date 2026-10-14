@@ -7,7 +7,10 @@ const fx = { rates: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`20
 const xml = (d: string, y: number) => `<m:properties><d:NEW_DATE m:type="Edm.DateTime">${d}T00:00:00</d:NEW_DATE>${['1MONTH', '3MONTH', '6MONTH', '1YEAR', '2YEAR', '5YEAR', '10YEAR', '30YEAR'].map((t) => `<d:BC_${t} m:type="Edm.Double">${y}</d:BC_${t}>`).join('')}</m:properties>`;
 const json = (b: unknown) => ({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(b) });
 
+/** The e2e suite must never reach the paid API: abort and record any attempt. */
+export const paidHits: string[] = [];
 async function mockApis(page: Page, mode: 'ok' | 'down') {
+  await page.route('https://api.twelvedata.com/**', (r) => { paidHits.push(r.request().url()); return r.abort('failed'); });
   const hosts = ['api.coingecko.com', 'data-api.binance.vision', 'api.frankfurter.dev', 'home.treasury.gov'];
   if (mode === 'down') { for (const h of hosts) await page.route(`https://${h}/**`, (r) => r.abort('failed')); return; }
   await page.route('https://api.coingecko.com/**', (r) => r.fulfill(json(coins)));
@@ -152,3 +155,5 @@ test.describe('equities wording: mode, cadence and data time', () => {
     expect(await page.locator('[data-widget=watchlist]').innerText()).not.toMatch(/\blive\b|real-time quotes/i);
   });
 });
+
+test.afterAll(() => { expect(paidHits, 'no request to api.twelvedata.com during e2e').toEqual([]); });

@@ -12,7 +12,8 @@ import { dedupe, parseRss, type NewsItem } from '../src/lib/rss.ts';
 import { parseYieldXml } from '../src/lib/treasury.ts';
 import { simulateBars } from '../src/lib/simulate.ts';
 import { INTRADAY_MIN_GAP_MIN, INTRADAY_SYMBOLS, estimateDayTotal, inIntradayWindow, parseQuote, type IntradayQuote, type IntradaySnap } from '../src/lib/intraday.ts';
-import { CreditsExhausted, dropIncompleteBar, MAX_CREDITS_PER_RUN, lastTradingDay, isCreditError, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
+import { GuardBlocked, getUsage, guardedFetch, paidAllowedEvent } from '../src/lib/guard.ts';
+import { CreditsExhausted, dropIncompleteBar, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
 import type { Bar } from '../src/lib/simulate.ts';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
@@ -23,6 +24,18 @@ const now = new Date().toISOString();
 const meta: Record<string, { ok: boolean; at: string; note: string }> = existsSync(join(OUT, 'meta.json')) ? JSON.parse(readFileSync(join(OUT, 'meta.json'), 'utf8')) : {};
 const save = (name: string, obj: unknown) => writeFileSync(join(OUT, name), JSON.stringify(obj) + '\n');
 const has = (name: string) => existsSync(join(OUT, name));
+
+// Paid Twelve Data access: key only for scheduled/dispatched runs; every call goes through the account-wide guard (free /api_usage first).
+const PAID_KEY = paidAllowedEvent(process.env.GITHUB_EVENT_NAME) ? process.env.TWELVE_DATA_API_KEY : undefined;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+let usageBefore: number | undefined;
+const paid = (kind: 'intraday' | 'eod', url: string, n: number, remaining: number) =>
+  guardedFetch({ fetch, sleep, key: PAID_KEY!, kind, url, n, remaining, headers: { 'User-Agent': UA }, onUsage: (u) => { usageBefore ??= u.daily; } });
+async function logUsage() {
+  let after = '?';
+  try { after = String((await getUsage(fetch, PAID_KEY!, AbortSignal.timeout(20000))).daily); } catch { /* usage endpoint is free; failure only affects the log */ }
+  console.log(`twelvedata account usage: ${usageBefore ?? '?'}/800 before, ${after} after`);
+}
 
 async function get(url: string, accept = '*/*', tries = 2): Promise<string> {
   for (let i = 1; ; i++) {
@@ -63,8 +76,8 @@ await step('equities', 'equities.json', async () => {
     save('equities.json', { generatedAt: now, kind: 'simulated', source: 'SIMULATED placeholder (no real equity source reachable)', symbols: EQUITIES.map((e, i) => ({ ...e, bars: simulateBars(1000 + i, e.px, end) })) });
     throw new Error('no baseline yet; wrote SIMULATED placeholder prices');
   }
-  const key = process.env.TWELVE_DATA_API_KEY;
-  if (!key) { console.log('twelvedata credits used: 0'); throw new Error('refresh requested but TWELVE_DATA_API_KEY is not set; keeping the previous snapshot'); }
+  const key = PAID_KEY;
+  if (!key) { console.log('twelvedata credits used: 0'); throw new Error('refresh requested but no key available (key is only used on scheduled/manual runs); keeping the previous snapshot'); }
   const real = prev && prev.kind === 'twelvedata';
   const lastBar: Record<string, string | undefined> = {};
   if (real) for (const e of prev.symbols) lastBar[e.symbol] = e.bars?.at(-1)?.t;
@@ -78,19 +91,18 @@ await step('equities', 'equities.json', async () => {
     for (let i = 0; i < todo.length; i += 8) {
       if (i) await new Promise((r) => setTimeout(r, 62000));
       const chunk = todo.slice(i, i + 8);
-      const r = await fetch(`https://api.twelvedata.com/time_series?symbol=${chunk.join(',')}&interval=1day&outputsize=260&apikey=${encodeURIComponent(key)}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(45000) });
       used += chunk.length; // counted when requested, conservatively
-      if (r.status === 429) throw new CreditsExhausted('HTTP 429');
-      if (!r.ok) throw new Error(`HTTP ${r.status} from api.twelvedata.com`);
-      const p = parseTwelveDataPartial(await r.json(), chunk);
+      const body = await paid('eod', `https://api.twelvedata.com/time_series?symbol=${chunk.join(',')}&interval=1day&outputsize=260&apikey=${encodeURIComponent(key)}`, chunk.length, todo.length - i);
+      const p = parseTwelveDataPartial(body, chunk);
       for (const [k, v] of Object.entries(p.bars)) bars[k] = dropIncompleteBar(v, new Date());
       for (const m of p.errors) console.log(`warn ${m}`);
     }
   } catch (e) {
-    if (!(e instanceof CreditsExhausted) && Object.keys(bars).length === 0) { console.log(`twelvedata credits used: ${used}`); throw e; }
+    if (!(e instanceof CreditsExhausted || e instanceof GuardBlocked) && Object.keys(bars).length === 0) { console.log(`twelvedata credits used: ${used}`); await logUsage(); throw e; }
     stop = e instanceof CreditsExhausted ? `API credit/rate limit reached (${e.message})` : (e as Error).message;
   }
   console.log(`twelvedata credits used: ${used}`);
+  await logUsage();
   const got = Object.keys(bars).length;
   if (!real && got < syms.length) throw new Error(`${stop || 'incomplete data'}; keeping previous snapshot`);
   if (!got) {
@@ -112,39 +124,35 @@ await step('equities', 'equities.json', async () => {
 const PAGES = 'https://alfiochoa.github.io/market-desk/data/intraday.json';
 await step('intraday', 'intraday.json', async () => {
   const path = join(OUT, 'intraday.json');
-  const key = process.env.TWELVE_DATA_API_KEY;
+  const key = PAID_KEY;
   const prev: IntradaySnap | null = await fetch(PAGES, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   if (prev?.generatedAt && prev.quotes) writeFileSync(path, JSON.stringify(prev) + '\n');
   const nowD = new Date();
   const age = prev?.generatedAt ? (nowD.getTime() - Date.parse(prev.generatedAt)) / 60000 : Infinity;
   if (process.env.INTRADAY_REFRESH !== '1') return prev ? `not an intraday slot; reusing last deployed quotes (${Math.round(age)} min old)` : 'not an intraday slot; no previous quotes';
-  if (!key) throw new Error('TWELVE_DATA_API_KEY not set');
+  if (!key) throw new Error('no key available (only scheduled/manual runs use it)');
   if (!inIntradayWindow(nowD)) { console.log('twelvedata credits used: 0'); return 'outside 13:30-21:00 UTC weekdays; skipped'; }
   if (age < INTRADAY_MIN_GAP_MIN) { console.log('twelvedata credits used: 0'); return `last refresh ${Math.round(age)} min ago (< ${INTRADAY_MIN_GAP_MIN}); skipped`; }
   const quotes: Record<string, IntradayQuote> = {};
   let used = 0;
-  const call = async (syms: string[]) => {
-    const r = await fetch(`https://api.twelvedata.com/quote?symbol=${syms.join(',')}&apikey=${encodeURIComponent(key)}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(45000) });
+  const call = async (syms: string[], remaining: number) => {
     used += syms.length;
-    if (r.status === 429) throw new CreditsExhausted('HTTP 429');
-    if (!r.ok) throw new Error(`HTTP ${r.status} from api.twelvedata.com`);
-    const j = await r.json();
-    if (isCreditError(j)) throw new CreditsExhausted((j as { message?: string }).message ?? '429');
+    const j = await paid('intraday', `https://api.twelvedata.com/quote?symbol=${syms.join(',')}&apikey=${encodeURIComponent(key)}`, syms.length, remaining) as Record<string, never>;
     for (const sy of syms) { try { quotes[sy] = parseQuote(syms.length === 1 ? j : j[sy], sy); } catch (e) { console.log(`warn ${(e as Error).message}`); } }
   };
-  const log = () => console.log(`twelvedata credits used: ${used} (day total ~${estimateDayTotal(nowD)}, estimate)`);
+  const log = async () => { console.log(`twelvedata credits used: ${used} (day total ~${estimateDayTotal(nowD)}, estimate)`); await logUsage(); };
   try {
-    await call([INTRADAY_SYMBOLS[0]]);
+    await call([INTRADAY_SYMBOLS[0]], INTRADAY_SYMBOLS.length);
     const open = quotes[INTRADAY_SYMBOLS[0]]?.is_market_open;
-    if (!open) { log(); return open === undefined ? 'probe returned no quote; skipped' : 'market closed (is_market_open=false); skipped after a 1-credit probe'; }
+    if (!open) { await log(); return open === undefined ? 'probe returned no quote; skipped' : 'market closed (is_market_open=false); skipped after a 1-credit probe'; }
     const rest = INTRADAY_SYMBOLS.slice(1);
-    for (let i = 0; i < rest.length; i += 7) { await new Promise((r) => setTimeout(r, 62000)); await call(rest.slice(i, i + 7)); }
+    for (let i = 0; i < rest.length; i += 7) { await new Promise((r) => setTimeout(r, 62000)); await call(rest.slice(i, i + 7), rest.length - i); }
   } catch (e) {
-    log();
+    await log();
     if (e instanceof CreditsExhausted) throw new Error('API credit/rate limit reached; keeping previous quotes', { cause: e });
     throw e;
   }
-  log();
+  await log();
   const got = Object.keys(quotes).length;
   if (got < 2) throw new Error('too few quotes; keeping previous');
   save('intraday.json', { generatedAt: new Date().toISOString(), source: 'Twelve Data /quote (delayed, provisional)', quotes } satisfies IntradaySnap);
