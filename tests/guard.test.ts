@@ -73,6 +73,13 @@ describe('guardedFetch', () => {
     await expect(guardedFetch(base(d, 'eod', 8))).rejects.toThrow(/per-minute/);
     expect(d.calls).toEqual(['usage', 'usage']);
   });
+  it('the api_usage probe itself shows as 1 credit this minute (seen in production): 8 symbols never fit, 7 do', async () => {
+    const eight = double([usage(300, 1)]);
+    await expect(guardedFetch(base(eight, 'eod', 30, 8))).rejects.toThrow(/per-minute limit busy \(1\+8 > 8\)/);
+    const seven = double([usage(300, 1)], [res({ ok: 1 })]);
+    await guardedFetch(base(seven, 'eod', 30, 7));
+    expect(seven.sleeps).toEqual([]); expect(seven.calls).toEqual(['usage', 'paid']);
+  });
   it('429 / "run out of API credits for the current minute": retries ONCE after 62 s, then gives up', async () => {
     const d = double([usage(300)], [res({}, 429), res({ ok: 2 })]);
     expect(await guardedFetch(base(d, 'eod', 8))).toEqual({ ok: 2 }); expect(d.sleeps).toEqual([MINUTE_WAIT_MS]);

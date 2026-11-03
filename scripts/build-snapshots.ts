@@ -88,9 +88,10 @@ await step('equities', 'equities.json', async () => {
   const bars: Record<string, Bar[]> = {};
   let used = 0, stop = '';
   try {
-    for (let i = 0; i < todo.length; i += 8) {
+    // 7 per call, not 8: the guard's own /api_usage probe counts 1 against the 8/min plan limit, so 8 + 1 was refused every night.
+    for (let i = 0; i < todo.length; i += 7) {
       if (i) await new Promise((r) => setTimeout(r, 62000));
-      const chunk = todo.slice(i, i + 8);
+      const chunk = todo.slice(i, i + 7);
       used += chunk.length; // counted when requested, conservatively
       const body = await paid('eod', `https://api.twelvedata.com/time_series?symbol=${chunk.join(',')}&interval=1day&outputsize=260&apikey=${encodeURIComponent(key)}`, chunk.length, todo.length - i);
       const p = parseTwelveDataPartial(body, chunk);
