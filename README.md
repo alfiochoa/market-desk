@@ -31,7 +31,6 @@ Free public market data is scattered across APIs that go down, rate-limit, or la
 7. **US equities watchlist + quote panel** from an end-of-day snapshot.
 8. **News**: official RSS headlines (Fed, ECB, SEC), deduplicated; links open the publisher.
 9. **Portfolio tracker** (browser-only).
-10. **Simulator tab**: an allocation calculator seeded with my real aggregated fund weights (edit them or hit *Randomize*), and a performance panel with 1D/5D/1M/6M/1Y/2Y returns per asset class and for the weighted portfolio — estimated from US-listed proxy ETFs (Twelve Data daily closes) converted to EUR at ECB reference rates. An approximation, not official fund NAVs.
 10. **Heatmap** of the watchlist by daily % change.
 
 ### Indicators

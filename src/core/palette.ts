@@ -1,26 +1,19 @@
 import { bus } from './bus.ts';
 import { h } from './ui.ts';
 import { CRYPTO, EQUITIES, FX_QUOTES } from '../universe.ts';
-import { INVEST_WIDGETS, WIDGETS } from '../widgets/registry.ts';
+import { WIDGETS } from '../widgets/registry.ts';
 import type { Workspace } from './workspace.ts';
-
-export type TabId = 'markets' | 'invest';
-/** Tab controller from main.ts: open() switches (mounting lazily) and returns that tab's workspace. */
-export interface TabCtl { active(): Workspace; open(id: TabId): Workspace }
 
 interface Cmd { label: string; hint: string; run(): void }
 
-export function buildCommands(tabs: TabCtl): Cmd[] {
-  const sel = (s: Parameters<typeof bus.select>[0]) => () => { const ws = tabs.open('markets'); ws.add('chart'); bus.select(s); ws.focus('chart'); };
+export function buildCommands(ws: Workspace): Cmd[] {
+  const sel = (s: Parameters<typeof bus.select>[0]) => () => { ws.add('chart'); bus.select(s); ws.focus('chart'); };
   return [
     ...EQUITIES.map((e) => ({ label: `${e.symbol} — ${e.name}`, hint: 'US equity', run: sel({ kind: 'eq', id: e.symbol }) })),
     ...CRYPTO.map((c) => ({ label: `${c.symbol} — ${c.id}`, hint: 'Crypto', run: sel({ kind: 'crypto', id: c.id }) })),
     ...FX_QUOTES.map((q) => ({ label: `USD/${q}`, hint: 'FX', run: sel({ kind: 'fx', id: q }) })),
-    ...WIDGETS.map((w) => ({ label: `Add / jump to widget: ${w.title}`, hint: 'Widget · Markets', run: () => tabs.open('markets').add(w.type) })),
-    ...INVEST_WIDGETS.filter((w) => !WIDGETS.includes(w)).map((w) => ({ label: `Add / jump to widget: ${w.title}`, hint: 'Widget · Simulator', run: () => tabs.open('invest').add(w.type) })),
-    { label: 'Go to tab: Markets', hint: 'Tab', run: () => tabs.open('markets') },
-    { label: 'Go to tab: Simulator', hint: 'Tab', run: () => tabs.open('invest') },
-    { label: 'Reset layout (current tab)', hint: 'Workspace', run: () => tabs.active().reset() },
+    ...WIDGETS.map((w) => ({ label: `Add / jump to widget: ${w.title}`, hint: 'Widget', run: () => ws.add(w.type) })),
+    { label: 'Reset layout', hint: 'Workspace', run: () => ws.reset() },
   ];
 }
 
@@ -36,8 +29,8 @@ export function score(q: string, text: string): number {
   return i === q.length ? 20 : 0;
 }
 
-export function initPalette(tabs: TabCtl) {
-  const cmds = buildCommands(tabs);
+export function initPalette(ws: Workspace) {
+  const cmds = buildCommands(ws);
   let open = false, idx = 0, shown: Cmd[] = [];
   const input = h('input', { type: 'search', class: 'pal-input', placeholder: 'Search symbols, widgets, actions…', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'pal-list', 'aria-autocomplete': 'list', 'aria-label': 'Command palette' });
   const list = h('ul', { id: 'pal-list', class: 'pal-list', role: 'listbox' });
@@ -53,7 +46,7 @@ export function initPalette(tabs: TabCtl) {
   };
   const show = (v: boolean) => {
     open = v; dlg.hidden = !v;
-    if (v) { input.value = ''; idx = 0; render(); input.focus(); } else (document.querySelector('.grid:not([hidden]) .panel .head') as HTMLElement | null)?.focus();
+    if (v) { input.value = ''; idx = 0; render(); input.focus(); } else (document.querySelector('.panel .head') as HTMLElement | null)?.focus();
   };
   const run = (i: number) => { const c = shown[i]; show(false); c?.run(); };
 
@@ -67,7 +60,7 @@ export function initPalette(tabs: TabCtl) {
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); show(!open); }
     else if (e.key === 'Escape' && open) show(false);
-    else if (e.altKey && /^[1-9]$/.test(e.key === 'Dead' ? '' : e.code.replace('Digit', ''))) { e.preventDefault(); tabs.active().focusNth(Number(e.code.replace('Digit', ''))); }
+    else if (e.altKey && /^[1-9]$/.test(e.key === 'Dead' ? '' : e.code.replace('Digit', ''))) { e.preventDefault(); ws.focusNth(Number(e.code.replace('Digit', ''))); }
   });
   return { show };
 }

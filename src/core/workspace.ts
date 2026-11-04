@@ -1,33 +1,30 @@
 import { COLS, findSlot, resolve, type Item } from '../lib/layout.ts';
-import { WIDGETS } from '../widgets/registry.ts';
-import { makeCtx, type WidgetDef } from './widget.ts';
+import { byType, WIDGETS } from '../widgets/registry.ts';
+import { makeCtx } from './widget.ts';
 import { h } from './ui.ts';
 
+const KEY = 'md:layout:v1';
 export const ROW = 34;
 
+export function defaultLayout(): Item[] {
+  const items: Item[] = [];
+  for (const w of WIDGETS) { const s = findSlot(items, w.w, w.h); items.push({ id: w.type, type: w.type, x: s.x, y: s.y, w: w.w, h: w.h }); }
+  return resolve(items);
+}
+function loadLayout(): Item[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Item[] | null;
+    if (Array.isArray(raw) && raw.every((i) => byType(i.type) && Number.isFinite(i.x + i.y + i.w + i.h))) return resolve(raw);
+  } catch { /* fall through */ }
+  return defaultLayout();
+}
+
 export class Workspace {
-  items: Item[];
+  items: Item[] = loadLayout();
   private els = new Map<string, { el: HTMLElement; destroy: () => void }>();
-  constructor(private root: HTMLElement, private defs: WidgetDef[] = WIDGETS, private key = 'md:layout:v1') {
-    this.items = this.loadLayout();
-    root.classList.add('grid'); if (!root.getAttribute('role')) root.setAttribute('role', 'main'); this.sync(); window.addEventListener('resize', () => this.layoutAll());
-  }
+  constructor(private root: HTMLElement) { root.classList.add('grid'); root.setAttribute('role', 'main'); this.sync(); window.addEventListener('resize', () => this.layoutAll()); }
 
-  private byType(t: string) { return this.defs.find((w) => w.type === t); }
-  private defaultLayout(): Item[] {
-    const items: Item[] = [];
-    for (const w of this.defs) { const s = findSlot(items, w.w, w.h); items.push({ id: w.type, type: w.type, x: s.x, y: s.y, w: w.w, h: w.h }); }
-    return resolve(items);
-  }
-  private loadLayout(): Item[] {
-    try {
-      const raw = JSON.parse(localStorage.getItem(this.key) ?? 'null') as Item[] | null;
-      if (Array.isArray(raw) && raw.every((i) => this.byType(i.type) && Number.isFinite(i.x + i.y + i.w + i.h))) return resolve(raw);
-    } catch { /* fall through */ }
-    return this.defaultLayout();
-  }
-
-  private save() { try { localStorage.setItem(this.key, JSON.stringify(this.items)); } catch { /* ignore */ } }
+  private save() { try { localStorage.setItem(KEY, JSON.stringify(this.items)); } catch { /* ignore */ } }
   private stacked() { return window.matchMedia('(max-width: 900px)').matches; }
 
   private place(it: Item) {
@@ -51,7 +48,7 @@ export class Workspace {
   }
 
   private create(it: Item) {
-    const def = this.byType(it.type)!;
+    const def = byType(it.type)!;
     const badge = h('span', { class: 'badge loading' });
     const body = h('div', { class: 'body' });
     const kbd = h('span', { class: 'kbd', 'aria-hidden': 'true' });
@@ -102,14 +99,14 @@ export class Workspace {
 
   has(type: string) { return this.items.some((i) => i.type === type); }
   add(type: string) {
-    const def = this.byType(type);
+    const def = byType(type);
     if (!def || this.has(type)) { this.focus(type); return; }
     const s = findSlot(this.items, def.w, def.h);
     this.items = resolve([...this.items, { id: type, type, x: s.x, y: s.y, w: def.w, h: def.h }]);
     this.sync(); this.save(); this.focus(type);
   }
   remove(id: string) { this.items = this.items.filter((i) => i.id !== id); this.items = resolve(this.items); this.sync(); this.save(); }
-  reset() { try { localStorage.removeItem(this.key); } catch { /* ignore */ } this.items = this.defaultLayout(); this.sync(); }
+  reset() { try { localStorage.removeItem(KEY); } catch { /* ignore */ } this.items = defaultLayout(); this.sync(); }
   focus(type: string) { const e = this.els.get(type)?.el; e?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); (e?.querySelector('.head') as HTMLElement | null)?.focus(); }
   focusNth(n: number) { const id = this.order()[n - 1]; if (id) this.focus(id); }
 }
