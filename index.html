@@ -17,7 +17,12 @@
     <span id="health" class="health" role="status"></span>
     <button id="reset" class="btn ghost">Reset layout</button>
   </header>
-  <div id="workspace"></div>
+  <nav class="tabs" role="tablist" aria-label="Workspaces">
+    <button id="tab-markets" role="tab" aria-selected="true" aria-controls="workspace">Markets</button>
+    <button id="tab-invest" role="tab" aria-selected="false" aria-controls="workspace-invest">My investments</button>
+  </nav>
+  <div id="workspace" role="tabpanel" aria-labelledby="tab-markets"></div>
+  <div id="workspace-invest" role="tabpanel" aria-labelledby="tab-invest" hidden></div>
   <footer class="foot">
     <p><b>Demo / educational only. Not investment advice.</b> Data is delayed, indicative or end-of-day and may be wrong or stale; each panel's badge shows its source, as-of time and whether it is live, cached or a snapshot. Equities (Twelve Data, free shared key): end-of-day, refreshed daily after the US close, plus delayed intraday quotes for a few priority symbols about every 30–60 min in US market hours (best-effort). Never real-time. Not affiliated with, endorsed by or sponsored by any data provider. Crypto prices powered by CoinGecko; also Binance public market data, Frankfurter/ECB, US Treasury, FRED, Federal Reserve, ECB and SEC — see the README for terms.</p>
     <p>Shortcuts: <kbd>Ctrl/⌘ K</kbd> palette · <kbd>Alt 1–9</kbd> jump to panel · drag headers to move, corner to resize (or focus a header, arrows move, Shift+arrows resize).</p>

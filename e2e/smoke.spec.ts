@@ -88,6 +88,34 @@ test.describe('widgets render', () => {
     await expect(page.locator('[data-widget=portfolio] tbody tr').first()).toContainText('AAPL');
   });
 
+  test('My investments tab mounts lazily, shows the allocation, and the choice persists', async ({ page }) => {
+    // Lazy mount: only the 9 market panels exist before the tab is opened.
+    await expect(page.locator('.panel')).toHaveCount(9);
+    await page.getByRole('tab', { name: 'My investments' }).click();
+    await expect(page.locator('#workspace')).toBeHidden();
+    const alloc = page.locator('[data-widget=alloc]');
+    await expect(alloc).toBeVisible();
+    await expect(alloc.locator('tbody tr')).toHaveCount(9); // 8 funds + total row
+    await expect(alloc.locator('.kpis')).toContainText('Equities');
+    await expect(alloc.locator('svg.alloc-bar rect')).toHaveCount(8);
+    await expect(alloc.locator('.badge')).toContainText('SNAPSHOT · distribucion_agregada_cartera.xlsx');
+    // Entering a total value splits it by weight and persists locally.
+    await alloc.getByLabel('Total portfolio value in euros').fill('10000');
+    await expect(alloc.locator('tr.total td').last()).toHaveText('10,000.00');
+    // Calculator: randomize keeps the sum at 100%, "My weights" restores the spreadsheet defaults.
+    const usWeight = alloc.getByLabel('US equities weight percent');
+    await alloc.getByRole('button', { name: 'Randomize' }).click();
+    await expect(alloc.locator('tr.total td').nth(2)).toHaveText('100.00%');
+    await alloc.getByRole('button', { name: 'My weights' }).click();
+    await expect(usWeight).toHaveValue('39.84');
+    await expect(alloc.locator('.kpis')).toContainText('90.34%');
+    await page.reload();
+    await expect(page.locator('#workspace')).toBeHidden(); // tab choice persisted
+    await expect(page.locator('[data-widget=alloc] tr.total td').last()).toHaveText('10,000.00');
+    await page.getByRole('tab', { name: 'Markets' }).click();
+    await expect(page.locator('[data-widget=chart] canvas').first()).toBeVisible();
+  });
+
   test('layout is draggable, persisted, and reset restores the default', async ({ page }) => {
     const before = await page.evaluate(() => localStorage.getItem('md:layout:v1'));
     expect(before).toBeNull();

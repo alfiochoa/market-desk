@@ -6,3 +6,4 @@ test-results
 *.log
 tmp/
 public/data/intraday.json
+distribucion_agregada_cartera.xlsx

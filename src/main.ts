@@ -1,12 +1,40 @@
 import './styles.css';
 import { Workspace } from './core/workspace.ts';
-import { initPalette } from './core/palette.ts';
+import { initPalette, type TabCtl, type TabId } from './core/palette.ts';
+import { INVEST_WIDGETS, WIDGETS } from './widgets/registry.ts';
 import { dataUrl } from './sources/providers.ts';
 
-const ws = new Workspace(document.getElementById('workspace')!);
-const pal = initPalette(ws);
+const TAB_KEY = 'md:tab:v1';
+const pages: Record<TabId, { root: HTMLElement; btn: HTMLElement }> = {
+  markets: { root: document.getElementById('workspace')!, btn: document.getElementById('tab-markets')! },
+  invest: { root: document.getElementById('workspace-invest')!, btn: document.getElementById('tab-invest')! },
+};
+// Lazy: the investments workspace mounts on first visit, so the default view stays untouched.
+const wss: Partial<Record<TabId, Workspace>> = {};
+const workspace = (id: TabId) => (wss[id] ??= id === 'markets'
+  ? new Workspace(pages.markets.root, WIDGETS, 'md:layout:v1')
+  : new Workspace(pages.invest.root, INVEST_WIDGETS, 'md:layout:invest:v1'));
+
+let current: TabId = 'markets';
+function open(id: TabId): Workspace {
+  current = id;
+  try { localStorage.setItem(TAB_KEY, id); } catch { /* ignore */ }
+  for (const [k, p] of Object.entries(pages)) {
+    p.root.hidden = k !== id;
+    p.btn.setAttribute('aria-selected', String(k === id));
+  }
+  const ws = workspace(id);
+  ws.layoutAll();
+  return ws;
+}
+const tabs: TabCtl = { active: () => workspace(current), open };
+pages.markets.btn.addEventListener('click', () => open('markets'));
+pages.invest.btn.addEventListener('click', () => open('invest'));
+open(((): TabId => { try { return localStorage.getItem(TAB_KEY) === 'invest' ? 'invest' : 'markets'; } catch { return 'markets'; } })());
+
+const pal = initPalette(tabs);
 document.getElementById('open-pal')!.addEventListener('click', () => pal.show(true));
-document.getElementById('reset')!.addEventListener('click', () => ws.reset());
+document.getElementById('reset')!.addEventListener('click', () => tabs.active().reset());
 
 // Honest data-health line from the Action's last snapshot build.
 fetch(dataUrl('meta.json')).then((r) => r.json()).then((m: Record<string, { ok: boolean; at: string; note: string }>) => {
