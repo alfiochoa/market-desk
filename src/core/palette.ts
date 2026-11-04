@@ -17,9 +17,9 @@ export function buildCommands(tabs: TabCtl): Cmd[] {
     ...CRYPTO.map((c) => ({ label: `${c.symbol} — ${c.id}`, hint: 'Crypto', run: sel({ kind: 'crypto', id: c.id }) })),
     ...FX_QUOTES.map((q) => ({ label: `USD/${q}`, hint: 'FX', run: sel({ kind: 'fx', id: q }) })),
     ...WIDGETS.map((w) => ({ label: `Add / jump to widget: ${w.title}`, hint: 'Widget · Markets', run: () => tabs.open('markets').add(w.type) })),
-    ...INVEST_WIDGETS.filter((w) => !WIDGETS.includes(w)).map((w) => ({ label: `Add / jump to widget: ${w.title}`, hint: 'Widget · My investments', run: () => tabs.open('invest').add(w.type) })),
+    ...INVEST_WIDGETS.filter((w) => !WIDGETS.includes(w)).map((w) => ({ label: `Add / jump to widget: ${w.title}`, hint: 'Widget · Simulator', run: () => tabs.open('invest').add(w.type) })),
     { label: 'Go to tab: Markets', hint: 'Tab', run: () => tabs.open('markets') },
-    { label: 'Go to tab: My investments', hint: 'Tab', run: () => tabs.open('invest') },
+    { label: 'Go to tab: Simulator', hint: 'Tab', run: () => tabs.open('invest') },
     { label: 'Reset layout (current tab)', hint: 'Workspace', run: () => tabs.active().reset() },
   ];
 }

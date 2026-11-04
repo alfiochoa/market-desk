@@ -88,10 +88,17 @@ test.describe('widgets render', () => {
     await expect(page.locator('[data-widget=portfolio] tbody tr').first()).toContainText('AAPL');
   });
 
-  test('My investments tab mounts lazily, shows the allocation, and the choice persists', async ({ page }) => {
+  test('Simulator tab mounts lazily, shows the allocation and performance, and the choice persists', async ({ page }) => {
+    // Flat EUR closes except the last session: every proxy +10% in 1D, so the portfolio row is +10.00% whatever the weights.
+    const days: string[] = [];
+    for (let d = new Date(Date.UTC(2023, 9, 2)); days.length < 560; d.setUTCDate(d.getUTCDate() + 1)) if (d.getUTCDay() % 6) days.push(d.toISOString().slice(0, 10));
+    const mkBars = days.map((t, i) => ({ t, c: i === days.length - 1 ? 110 : 100 }));
+    const SYMS = ['VOO', 'VGK', 'VWO', 'VSS', 'EWJ', 'IGOV', 'IBND', 'WIP'];
+    await page.route('**/data/sim.json', (r) => r.fulfill(json({ generatedAt: '2026-10-14T00:00:00Z', source: 'fixture',
+      series: SYMS.map((s) => ({ assetClass: s, symbol: s, name: s, bars: mkBars })) })));
     // Lazy mount: only the 9 market panels exist before the tab is opened.
     await expect(page.locator('.panel')).toHaveCount(9);
-    await page.getByRole('tab', { name: 'My investments' }).click();
+    await page.getByRole('tab', { name: 'Simulator' }).click();
     await expect(page.locator('#workspace')).toBeHidden();
     const alloc = page.locator('[data-widget=alloc]');
     await expect(alloc).toBeVisible();
@@ -102,13 +109,20 @@ test.describe('widgets render', () => {
     // Entering a total value splits it by weight and persists locally.
     await alloc.getByLabel('Total portfolio value in euros').fill('10000');
     await expect(alloc.locator('tr.total td').last()).toHaveText('10,000.00');
-    // Calculator: randomize keeps the sum at 100%, "My weights" restores the spreadsheet defaults.
-    const usWeight = alloc.getByLabel('US equities weight percent');
+    // Calculator: randomize keeps the sum at 100%.
     await alloc.getByRole('button', { name: 'Randomize' }).click();
     await expect(alloc.locator('tr.total td').nth(2)).toHaveText('100.00%');
-    await alloc.getByRole('button', { name: 'My weights' }).click();
-    await expect(usWeight).toHaveValue('39.84');
-    await expect(alloc.locator('.kpis')).toContainText('90.34%');
+    // Performance: per-class and weighted portfolio returns from the fixture, plus € on the entered total.
+    const perf = page.locator('[data-widget=perf]');
+    await expect(perf.locator('.badge')).toContainText('SNAPSHOT · Twelve Data × ECB');
+    await expect(perf.locator('thead')).toContainText('2Y');
+    const usRow = perf.locator('tbody tr').first();
+    await expect(usRow).toContainText('VOO');
+    await expect(usRow.locator('td').nth(2)).toHaveText('+10.00%'); // 1D
+    await expect(usRow.locator('td').nth(7)).toHaveText('+10.00%'); // 2Y
+    const totalRow = perf.locator('tr.total').first();
+    await expect(totalRow.locator('td').nth(2)).toHaveText('+10.00%');
+    await expect(perf.locator('tr.total').nth(1)).toContainText('+1,000.00'); // € gain on 10,000
     await page.reload();
     await expect(page.locator('#workspace')).toBeHidden(); // tab choice persisted
     await expect(page.locator('[data-widget=alloc] tr.total td').last()).toHaveText('10,000.00');

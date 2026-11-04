@@ -132,6 +132,11 @@ export const treasury: Provider<TreasurySnap>[] = [
 /** FRED's fredgraph.csv sends no CORS headers, so browsers cannot read it: snapshot only. */
 export const fred: Provider<FredSnap>[] = [snapshot<FredSnap, FredSnap>('fred.json', 'FRED (Action snapshot)', (s) => ({ data: s, asOf: s.generatedAt }))];
 
+/* ---------- simulator: asset-class proxy closes in EUR ---------- */
+export interface SimSeries { assetClass: string; symbol: string; name: string; note?: string; bars: { t: string; c: number }[] }
+export interface SimSnap { generatedAt: string; source: string; series: SimSeries[] }
+export const sim: Provider<SimSnap>[] = [snapshot<SimSnap, SimSnap>('sim.json', 'Twelve Data × ECB (Action snapshot)', (s) => ({ data: s, asOf: s.series[0]?.bars.at(-1)?.t ?? s.generatedAt }))];
+
 /* ---------- equities & news (snapshot only) ---------- */
 const EOD_CADENCE = 'refreshes daily after US close';
 export const INTRADAY_CADENCE = 'refreshes ~every 30–60 min in US market hours (best-effort)';

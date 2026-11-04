@@ -15,6 +15,8 @@ import { INTRADAY_MIN_GAP_MIN, INTRADAY_SYMBOLS, estimateDayTotal, inIntradayWin
 import { GuardBlocked, getUsage, guardedFetch, paidAllowedEvent } from '../src/lib/guard.ts';
 import { CreditsExhausted, dropIncompleteBar, MAX_CREDITS_PER_RUN, lastTradingDay, parseTwelveDataPartial, planFetch } from '../src/lib/twelvedata.ts';
 import type { Bar } from '../src/lib/simulate.ts';
+import { HOLDINGS } from '../src/lib/holdings.ts';
+import { toEur } from '../src/lib/perf.ts';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'data');
 const UA = 'market-desk/0.1 (educational demo; +https://github.com/alfiochoa/market-desk)';
@@ -118,6 +120,49 @@ await step('equities', 'equities.json', async () => {
   equitiesRefreshed = true;
   if (stop) throw new Error(`partial refresh: ${got}/${todo.length} symbols, ${stop}`);
   return `${got} symbols refreshed from Twelve Data (${used} credits)`;
+});
+
+// Simulator proxies: ~2 years of daily closes for the 8 asset-class proxy ETFs, converted to EUR with ECB reference rates.
+// Same gate as equities (nightly 23:xx weekday slot or manual dispatch): 8 Twelve Data credits per refresh, baseline committed and reused otherwise.
+await step('sim', 'sim.json', async () => {
+  const prev = has('sim.json') ? JSON.parse(readFileSync(join(OUT, 'sim.json'), 'utf8')) : null;
+  if (process.env.EQUITIES_REFRESH !== '1') {
+    console.log('twelvedata credits used: 0');
+    if (prev) return `reusing committed baseline (${prev.series.length} proxies, no API calls)`;
+    throw new Error('no baseline yet; the nightly equities refresh (or a manual dispatch with refresh_equities) will build it');
+  }
+  const key = PAID_KEY;
+  if (!key) { console.log('twelvedata credits used: 0'); throw new Error('refresh requested but no key available; keeping the previous snapshot'); }
+  const last = lastTradingDay(new Date());
+  if (prev?.series?.every((s: { bars: { t: string }[] }) => s.bars.at(-1)?.t === last)) { console.log('twelvedata credits used: 0'); return `all proxies already have the last trading day (${last})`; }
+  const start = new Date(Date.now() - 850 * 864e5).toISOString().slice(0, 10);
+  const fx = JSON.parse(await get(`https://api.frankfurter.dev/v1/${start}..?base=USD&symbols=EUR`)) as { rates?: Record<string, { EUR: number }> };
+  if (!fx.rates || Object.keys(fx.rates).length < 400) throw new Error('unexpected Frankfurter payload for EUR/USD history');
+  const rates = Object.fromEntries(Object.entries(fx.rates).map(([d, r]) => [d, r.EUR]));
+  const syms = HOLDINGS.map((h) => h.proxy.symbol);
+  const bars: Record<string, Bar[]> = {};
+  let used = 0;
+  for (let i = 0; i < syms.length; i += 7) {
+    if (i) await sleep(62000);
+    const chunk = syms.slice(i, i + 7);
+    used += chunk.length;
+    const body = await paid('eod', `https://api.twelvedata.com/time_series?symbol=${chunk.join(',')}&interval=1day&outputsize=540&apikey=${encodeURIComponent(key)}`, chunk.length, syms.length - i);
+    const p = parseTwelveDataPartial(body, chunk);
+    for (const [k, v] of Object.entries(p.bars)) bars[k] = dropIncompleteBar(v, new Date());
+    for (const m of p.errors) console.log(`warn ${m}`);
+  }
+  console.log(`twelvedata credits used: ${used}`);
+  await logUsage();
+  const old = new Map<string, { bars: { t: string; c: number }[] }>((prev?.series ?? []).map((s: { symbol: string; bars: { t: string; c: number }[] }) => [s.symbol, s]));
+  const series = HOLDINGS.map((h) => {
+    const b = bars[h.proxy.symbol];
+    return { assetClass: h.assetClass, symbol: h.proxy.symbol, name: h.proxy.name, ...(h.proxy.note ? { note: h.proxy.note } : {}),
+      bars: b ? toEur(b.map((x) => ({ t: x.t, c: x.c })), rates) : old.get(h.proxy.symbol)?.bars };
+  });
+  const missing = series.filter((s) => !s.bars?.length).map((s) => s.symbol);
+  if (missing.length) throw new Error(`no data for ${missing.join(', ')}; keeping the previous snapshot`);
+  save('sim.json', { generatedAt: now, source: 'Twelve Data daily closes × ECB (Frankfurter) EUR/USD reference rates', series });
+  return `${series.length} proxies refreshed to ${last} (${used} credits)`;
 });
 
 // Intraday quotes for a small priority subset, US market hours only. Not committed (each run deploys its own intraday.json; pushes reuse the
